@@ -23,7 +23,7 @@ const api = (p, opt = {}) => fetch(`https://api.github.com/${p}`, {
   ...opt, headers: { Accept: 'application/vnd.github+json',
                      Authorization: `Bearer ${S.gh.token}`, ...(opt.headers || {}) } });
 
-function connectMsg(text) {
+function showConnectError(text) {
   const n = $('#connectMsg');
   n.textContent = text || '';
   n.classList.toggle('hide', !text);
@@ -32,7 +32,7 @@ function connectMsg(text) {
 async function ghLoad() {
   if (!S.gh) return false;
   setStatus('loading…');
-  connectMsg('');
+  showConnectError('');
   const { repo, branch, path } = S.gh;
   const r = await api(`repos/${repo}/contents/${encodeURIComponent(path)}?ref=${branch}`);
   if (!r.ok) {
@@ -44,7 +44,7 @@ async function ghLoad() {
       409: 'empty repository — push a first commit before connecting',
     }[r.status] || (await r.text()).slice(0, 140);
     setStatus(`GitHub ${r.status}: ${why}`, true);
-    connectMsg(`GitHub ${r.status} — ${why}`);
+    showConnectError(`GitHub ${r.status} — ${why}`);
     return false;
   }
   const j = await r.json();
@@ -396,11 +396,11 @@ $('#btnConnect').onclick = () => {
 $('#btnConnectCancel').onclick = () => $('#sheetConnect').classList.add('hide');
 $('#btnConnectSave').onclick = async () => {
   const repo = $('#inRepo').value.trim(), token = $('#inToken').value.trim();
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return connectMsg('Repository must look like owner/name.');
-  if (!token) return connectMsg('Paste a token. Create one at github.com → Settings → Developer settings → Fine-grained tokens.');
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return showConnectError('Repository must look like owner/name.');
+  if (!token) return showConnectError('Paste a token. Create one at github.com → Settings → Developer settings → Fine-grained tokens.');
   S.gh = { repo, branch: $('#inBranch').value.trim() || 'main',
            path: $('#inPath').value.trim() || 'Content/source.json', token };
-  connectMsg('connecting…');
+  showConnectError('connecting…');
   // Keep the sheet open unless it actually worked, so a failure is visible.
   if (await ghLoad()) {
     localStorage.setItem('pl.gh', JSON.stringify(S.gh));
