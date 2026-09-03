@@ -189,9 +189,14 @@ function tools(node, buttons) {
 function renderPost() {
   const q = current(); const stage = $('#stage'); stage.innerHTML = '';
   const ctl = $('#postCtl');
-  if (!q) { ctl.classList.add('hide'); stage.innerHTML = '<p class="muted">Select a post.</p>'; return; }
+  if (!q) {
+    ctl.classList.add('hide');
+    $('#inspectBody').classList.add('hide'); $('#inspectEmpty').classList.remove('hide');
+    stage.innerHTML = '<p class="muted">Select a post.</p>'; return;
+  }
   ctl.classList.remove('hide');
   renderPostControls(q);
+  renderInspector(q);
 
   const phone = el('div', 'phone');
   phone.innerHTML = `<div class="statusbar"><span>9:41</span><span>▲ ᯤ ▮</span></div>
@@ -242,8 +247,8 @@ function renderPost() {
   fitPhone();
 }
 
-/// Language, status, date and the destructive actions — all in the side panel
-/// so nothing overlaps the device.
+/// Left panel: where you are — language, status, date. The post's coordinates,
+/// not its content.
 function renderPostControls(q) {
   const tabs = $('#langTabs'); tabs.innerHTML = '';
   for (const l of ['en', 'zh']) {
@@ -257,6 +262,45 @@ function renderPostControls(q) {
   const d = $('#pDate'); d.value = q.date;
   d.onchange = () => { q.date = d.value; markDirty(); renderList(); };
 
+}
+
+/// Right panel: what you are editing. Everything that changes the post itself
+/// lives here, so nothing overlaps the device.
+function renderInspector(q) {
+  $('#inspectEmpty').classList.add('hide');
+  $('#inspectBody').classList.remove('hide');
+  $('#iId').textContent = q.id;
+
+  const spread = new Set(q.responses.map(r => r.option));
+  $('#iShape').textContent =
+    `${q.options.length} options · ${q.responses.length} comments · ` +
+    (spread.size < 2 ? 'no disagreement' : `${spread.size} sides taken`);
+
+  const list = $('#iResponses'); list.innerHTML = '';
+  if (!q.responses.length) list.appendChild(el('p', 'muted', 'No comments yet.'));
+  const byWeight = [...q.responses].sort((a, b) => weight(b.voice) - weight(a.voice));
+  for (const r of byWeight) {
+    const v = S.src.voices.find(x => x.id === r.voice);
+    const st = S.src.optionStyle[r.option] || {};
+    const row = el('div', 'i-resp');
+    const key = el('div', 'i-key', r.option);
+    key.style.background = st.fill; key.style.color = st.ink;
+    key.title = 'click to move this voice to another option';
+    key.onclick = () => {
+      const keys = q.options.map(o => o.key);
+      r.option = keys[(keys.indexOf(r.option) + 1) % keys.length];
+      markDirty(); renderPost();
+    };
+    row.appendChild(key);
+    row.appendChild(el('div', 'nm', esc(v?.name?.[S.lang] || v?.name?.en || r.voice)));
+    row.appendChild(btn('Remove', () => {
+      q.responses = q.responses.filter(x => x !== r); markDirty(); renderPost();
+    }, 'danger'));
+    list.appendChild(row);
+  }
+
+  $('#btnRewriteTitle').onclick = () => openAI('field', q, { key: 'title', label: 'question title' });
+  $('#btnRewriteWhy').onclick = () => openAI('field', q, { key: 'why', label: 'question setup' });
   $('#btnAddComments').onclick = () => openAI('responses', q);
   $('#btnDelete').onclick = () => {
     if (!confirm(`Delete "${q.title.en}"? This cannot be undone from here.`)) return;

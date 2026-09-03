@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Newsreader:ital,wght@0,400;1,400&family=Merriweather&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=47106531">
+<link rel="stylesheet" href="style.css?v=f1fdf84b">
 </head>
 <body>
 <div class="wrap">
@@ -26,7 +26,7 @@
       <select id="device"></select>
     </div>
 
-    <!-- Everything about the post being edited. Nothing sits over the phone. -->
+    <!-- Language, status and date: the post's coordinates, not its content. -->
     <div id="postCtl" class="hide">
       <div class="sep"></div>
       <div class="field">
@@ -36,10 +36,6 @@
       <div class="field two-col">
         <div><label>Status</label><select id="pStatus"></select></div>
         <div><label>Date</label><input type="date" id="pDate"></div>
-      </div>
-      <div class="row" style="margin-bottom:14px">
-        <button class="tiny" id="btnAddComments">+ comments</button>
-        <button class="tiny danger" id="btnDelete">Delete post</button>
       </div>
     </div>
 
@@ -66,6 +62,46 @@
   </aside>
 
   <main class="main"><div class="stage" id="stage"></div></main>
+
+  <!-- Right: everything that edits the post itself. Nothing sits over the phone. -->
+  <aside class="inspect">
+    <div class="inspect-head">Post</div>
+    <div id="inspectEmpty" class="muted">Select a post on the left.</div>
+    <div id="inspectBody" class="hide">
+      <div class="field">
+        <label>Identifier</label>
+        <div class="mono" id="iId">—</div>
+      </div>
+      <div class="field">
+        <label>Shape</label>
+        <div class="muted" id="iShape">—</div>
+      </div>
+
+      <div class="sep"></div>
+      <div class="field">
+        <label>Write with Claude</label>
+        <div class="row">
+          <button class="tiny" id="btnRewriteTitle">Rewrite title</button>
+          <button class="tiny" id="btnRewriteWhy">Rewrite setup</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button class="tiny primary" id="btnAddComments">+ comments</button>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+      <div class="field">
+        <label>Comments</label>
+        <div id="iResponses"></div>
+      </div>
+
+      <div class="sep"></div>
+      <div class="field">
+        <label>Danger</label>
+        <button class="tiny danger" id="btnDelete">Delete post</button>
+      </div>
+    </div>
+  </aside>
 </div>
 
 <!-- Connect -->
@@ -111,7 +147,7 @@
   </div>
 </div></div>
 
-<script src="prompts.js?v=47106531"></script>
-<script src="app.js?v=47106531"></script>
+<script src="prompts.js?v=f1fdf84b"></script>
+<script src="app.js?v=f1fdf84b"></script>
 </body>
 </html>
