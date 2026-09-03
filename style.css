@@ -64,12 +64,19 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--chip);padding:14
 
 /* ── The post rendered exactly as the app draws it ─────────────────────── */
 .stage{display:flex;justify-content:center;padding:8px 0 40px}
-.phone{width:393px;background:var(--bg);border-radius:44px;border:10px solid #1c1c1e;
-  box-shadow:0 24px 60px rgba(36,50,53,.18);overflow:hidden}
-.phone .statusbar{height:44px;display:flex;align-items:center;justify-content:space-between;
-  padding:0 26px;font-size:13px;font-weight:600}
-.phone .wordmark{font:italic 400 17px/1 Newsreader,Georgia,serif;text-align:center;padding:6px 0 14px}
-.phone .scroll{padding:0 16px 28px}
+/* A real device, not a tall strip: 393x852pt, with the content scrolling
+   inside it exactly as it does on the phone. */
+.phone{width:393px;height:852px;flex:none;background:var(--bg);border-radius:44px;
+  border:10px solid #1c1c1e;box-shadow:0 24px 60px rgba(36,50,53,.18);
+  overflow:hidden;display:flex;flex-direction:column;position:sticky;top:16px}
+.phone .statusbar{flex:none;height:44px;display:flex;align-items:center;
+  justify-content:space-between;padding:0 26px;font-size:13px;font-weight:600}
+.phone .wordmark{flex:none;font:italic 400 17px/1 Newsreader,Georgia,serif;
+  text-align:center;padding:6px 0 14px}
+.phone .scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  padding:0 16px 28px;scrollbar-width:thin}
+.phone .scroll::-webkit-scrollbar{width:5px}
+.phone .scroll::-webkit-scrollbar-thumb{background:var(--hair-2);border-radius:3px}
 
 /* question card */
 .qcard{background:#fff;border-radius:24px;padding:24px}
