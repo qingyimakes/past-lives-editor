@@ -134,7 +134,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--chip);padding:14
 .rclaim{font-size:17px;font-weight:500;line-height:1.6;margin-bottom:9px}
 .rdetail{font-size:16.5px;line-height:1.7;color:#5A5A5A}
 .rquote{background:var(--quote);border-radius:16px;padding:14px 16px;margin-top:10px}
-.rquote .qt{font:400 17.5px/1.6 Merriweather,Georgia,serif}
+.rquote .qt{font:400 19px/1.6 Newsreader,Georgia,serif}
 .rquote .qs{font-size:13.5px;font-weight:500;color:var(--ink-2);margin-top:8px}
 .rquote .qs a{text-decoration:underline}
 .rreach{font-size:15px;line-height:1.55;color:var(--ink-3);margin-top:9px}
