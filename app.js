@@ -13,6 +13,7 @@ const el = (t, c, h) => { const n = document.createElement(t); if (c) n.classNam
                           if (h !== undefined) n.innerHTML = h; return n; };
 const esc = (s) => (s ?? '').replace(/[<>&]/g, m => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[m]));
 const STATUSES = ['draft', 'published', 'hidden', 'archived'];
+const REVEAL_PAD = 16;   // breathing room above a comment scrolled into view
 
 /// Points, not pixels — the same units the app lays out in.
 const DEVICES = [
@@ -286,16 +287,16 @@ function renderInspector(q) {
     const key = el('div', 'i-key', r.option);
     key.style.background = st.fill; key.style.color = st.ink;
     key.title = 'click to move this voice to another option';
-    key.onclick = () => {
-      const keys = q.options.map(o => o.key);
-      r.option = keys[(keys.indexOf(r.option) + 1) % keys.length];
-      markDirty(); renderPost();
-    };
+    key.onclick = (e) => { e.stopPropagation(); cycleOption(q, r); };
     row.appendChild(key);
     row.appendChild(el('div', 'nm', esc(v?.name?.[S.lang] || v?.name?.en || r.voice)));
-    row.appendChild(btn('Remove', () => {
+    const rm = btn('Remove', (e) => {
+      e.stopPropagation();
       q.responses = q.responses.filter(x => x !== r); markDirty(); renderPost();
-    }, 'danger'));
+    }, 'danger');
+    row.appendChild(rm);
+    row.title = 'scroll the phone to this comment';
+    row.onclick = () => reveal(r.voice);
     list.appendChild(row);
   }
 
@@ -314,6 +315,7 @@ function renderResponse(q, r) {
   const st = S.src.optionStyle[r.option];
   const opt = q.options.find(o => o.key === r.option);
   const row = el('div', 'resprow');
+  row.dataset.voice = r.voice;
   row.appendChild(el('div', 'avatar', avatarInitial(v.name[S.lang] || v.name.en)));
 
   const body = el('div', 'rbody');
@@ -324,11 +326,7 @@ function renderResponse(q, r) {
   const pill = el('div', 'rpill', `${S.lang === 'zh' ? '投给 ' : 'Voted for '}${r.option} · ${esc(opt?.label[S.lang] || '')}`);
   pill.style.background = st.bg; pill.style.color = st.text; pill.style.cursor = 'pointer';
   pill.title = 'click to move this voice to another option';
-  pill.onclick = () => {
-    const keys = q.options.map(o => o.key);
-    r.option = keys[(keys.indexOf(r.option) + 1) % keys.length];
-    markDirty(); renderPost();
-  };
+  pill.onclick = () => cycleOption(q, r);
   body.appendChild(pill);
 
   // quote — required, and the source line is what makes it a quote
@@ -341,10 +339,9 @@ function renderResponse(q, r) {
   srcEd.style.textDecoration = 'underline';
   srcLine.appendChild(srcEd);
   qb.appendChild(srcLine);
-  const url = el('input'); url.value = r.quote.url || ''; url.placeholder = 'https://en.wikisource.org/wiki/…';
-  url.style.marginTop = '8px'; url.style.fontSize = '12px';
-  url.onchange = () => { r.quote.url = url.value.trim(); r.quote.verified = false; markDirty(); };
-  qb.appendChild(url);
+  // The link is for reading, not editing — the same bargain the app makes:
+  // the source line is what you click, not a URL field to keep in order.
+  if (r.quote.url) srcLine.appendChild(sourceLink(r.quote.url));
   if (!r.quote.text?.en?.trim()) qb.appendChild(el('div', 'badge warn', 'no quote — this will not pass the check'));
   else qb.appendChild(el('div', 'badge' + (r.quote.verified ? ' ok' : ''),
         r.quote.verified ? 'verified against source' : 'not yet verified'));
@@ -371,6 +368,59 @@ function renderResponse(q, r) {
 
 /// Titles arrive wrapped in punctuation; a bracket is not a monogram.
 const avatarInitial = (s) => (String(s || '').match(/[\p{L}\p{N}]/u) || ['?'])[0];
+
+/// Move a voice to the next option. The chip in the thread and the chip in the
+/// inspector are the same act, so they are the same function.
+function cycleOption(q, r) {
+  const keys = q.options.map(o => o.key);
+  r.option = keys[(keys.indexOf(r.option) + 1) % keys.length];
+  markDirty(); renderPost();
+  reveal(r.voice, false);
+}
+
+/// Animated by hand: scroll-behavior:smooth does nothing inside the phone's
+/// transform-scaled frame in some browsers, and a jump loses your place.
+function glide(box, to, ms = 420) {
+  const from = box.scrollTop, d = to - from;
+  const token = (box._glide = (box._glide || 0) + 1);
+  if (!d) return;
+  // A hidden tab gets no animation frames; a background render must still land.
+  if (document.hidden || matchMedia('(prefers-reduced-motion: reduce)').matches) { box.scrollTop = to; return; }
+  const t0 = performance.now();
+  const step = (t) => {
+    if (box._glide !== token) return;                  // a newer click won
+    const p = Math.min(1, (t - t0) / ms);
+    const e = p < .5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+    box.scrollTop = from + d * e;
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+/// Scroll the phone — not the page — to a comment, and mark it so the eye can
+/// find it among nine others.
+function reveal(voice, flash = true) {
+  const scroll = document.querySelector('.phone .scroll');
+  const node = scroll?.querySelector(`.resprow[data-voice="${CSS.escape(voice)}"]`);
+  if (!node) return;
+  glide(scroll, Math.max(0, node.offsetTop - REVEAL_PAD));
+  if (!flash) return;
+  node.classList.remove('flash');
+  void node.offsetWidth;                 // restart the animation on a re-click
+  node.classList.add('flash');
+}
+/// A chip that opens the source in a new tab, labelled by where it goes rather
+/// than by the whole URL.
+function sourceLink(href) {
+  const a = el('a', 'srclink');
+  a.href = href; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  let host = href;
+  try { host = new URL(href).hostname.replace(/^www\./, ''); } catch (e) {}
+  a.textContent = host + ' \u2197';
+  a.title = href;
+  a.onclick = (e) => e.stopPropagation();
+  return a;
+}
 
 const weight = (vid) => S.src.voices.find(v => v.id === vid)?.reach?.weight ?? 0;
 const kindLabel = (k) => S.src.kinds[k]?.[S.lang] || k || '';

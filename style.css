@@ -32,6 +32,8 @@ a{color:var(--ink-2)}
 .i-resp{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--hair)}
 .i-resp:last-child{border-bottom:0}
 .i-resp .nm{flex:1;min-width:0;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.i-resp{cursor:pointer;border-radius:10px;margin:0 -6px;padding-left:6px;padding-right:6px}
+.i-resp:hover{background:var(--chip)}
 .i-key{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
   font:700 12px/1 'DM Sans',sans-serif;cursor:pointer}
 /* The phone gets the whole viewport height; every control lives in a side panel. */
@@ -102,8 +104,10 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--chip);padding:14
   justify-content:space-between;padding:0 26px;font-size:13px;font-weight:600}
 .phone .wordmark{flex:none;font:italic 400 17px/1 Newsreader,Georgia,serif;
   text-align:center;padding:6px 0 14px}
+/* position:relative so a comment's offsetTop is measured against the scroller
+   itself — the phone is transform-scaled, and rects are not. */
 .phone .scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
-  padding:0 16px 28px;scrollbar-width:thin}
+  padding:0 16px 28px;scrollbar-width:thin;position:relative}
 .phone .scroll::-webkit-scrollbar{width:5px}
 .phone .scroll::-webkit-scrollbar-thumb{background:var(--hair-2);border-radius:3px}
 
@@ -144,7 +148,16 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--chip);padding:14
 .rquote .qt{font:400 19px/1.6 Newsreader,Georgia,serif}
 .rquote .qs{font-size:13.5px;font-weight:500;color:var(--ink-2);margin-top:8px}
 .rquote .qs a{text-decoration:underline}
+.srclink{display:inline-block;margin-left:8px;padding:2px 9px;border-radius:999px;
+  background:var(--chip);color:var(--ink-3);font-size:12.5px;text-decoration:none;
+  white-space:nowrap;vertical-align:baseline}
+.srclink:hover{background:var(--hair-2)}
 .rreach{font:italic 400 15px/1.55 Newsreader,Georgia,serif;color:var(--ink-2);margin-top:9px}
+/* Nine comments look alike; say which one you just asked for. */
+.resprow{border-radius:16px;transition:background .2s}
+@keyframes flash{from{background:rgba(236,105,64,.18)} to{background:transparent}}
+.resprow.flash{animation:flash 1.6s ease-out}
+@media(prefers-reduced-motion:reduce){.resprow.flash{animation-duration:.01s}}
 
 /* editing affordances */
 [contenteditable]{outline:none;border-radius:6px}
