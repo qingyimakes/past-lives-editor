@@ -566,7 +566,7 @@ function mergeResponses(data, q) {
   addVoices(newVoices);
   for (const r of fresh) { r.quote.verified = false; q.responses.push(r); }
   aiDone(`added ${fresh.length} comment${fresh.length > 1 ? 's' : ''}` +
-         (dup.length ? ` · skipped ${dup.length} already here` : ''));
+         (dup.length ? ` · skipped ${dup.length} already here` : ''), fresh[0].voice);
 }
 
 function mergeNewPost(data) {
@@ -595,11 +595,14 @@ function mergeNewPost(data) {
   aiDone(`created "${q.title.en.slice(0, 40)}" with ${responses.length} comment${responses.length === 1 ? '' : 's'}`);
 }
 
-function aiDone(what) {
+function aiDone(what, showVoice) {
   markDirty();
   $('#sheetAI').classList.add('hide');
   aiNote('');
   renderList(); renderPost();
+  // A merged comment sorts by reach, so a new voice with no weight lands at
+  // the bottom of a long thread. Go to it, or the merge looks like nothing.
+  if (showVoice) reveal(showVoice);
   const problems = check();
   setStatus(problems.length ? `${what} — ${problems.length} problem(s), press Check` : what);
 }
