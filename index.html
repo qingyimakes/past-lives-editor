@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Newsreader:ital,wght@0,400;1,400&family=Merriweather&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=07bc28c9">
+<link rel="stylesheet" href="style.css?v=47106531">
 </head>
 <body>
 <div class="wrap">
@@ -15,12 +15,35 @@
     <div class="brand">Past Lives</div>
     <div class="muted" id="repoLine">not connected</div>
 
-    <div class="row" style="margin:14px 0">
+    <div class="row" style="margin:12px 0 16px">
       <button class="tiny" id="btnConnect">Connect</button>
       <button class="tiny" id="btnLoad">Reload</button>
       <button class="tiny primary" id="btnNew">New post</button>
     </div>
 
+    <div class="field">
+      <label>Device</label>
+      <select id="device"></select>
+    </div>
+
+    <!-- Everything about the post being edited. Nothing sits over the phone. -->
+    <div id="postCtl" class="hide">
+      <div class="sep"></div>
+      <div class="field">
+        <label>Language</label>
+        <div class="langtabs" id="langTabs"></div>
+      </div>
+      <div class="field two-col">
+        <div><label>Status</label><select id="pStatus"></select></div>
+        <div><label>Date</label><input type="date" id="pDate"></div>
+      </div>
+      <div class="row" style="margin-bottom:14px">
+        <button class="tiny" id="btnAddComments">+ comments</button>
+        <button class="tiny danger" id="btnDelete">Delete post</button>
+      </div>
+    </div>
+
+    <div class="sep"></div>
     <div class="field">
       <label>Show</label>
       <select id="filter">
@@ -31,21 +54,18 @@
         <option value="archived">Archived</option>
       </select>
     </div>
-
     <div id="list"></div>
+
+    <div class="sep"></div>
+    <div class="row" style="margin-bottom:8px">
+      <button class="tiny" id="btnCheck">Check</button>
+      <button class="tiny" id="btnDownload">Download</button>
+      <button class="tiny primary" id="btnSave">Save</button>
+    </div>
+    <div class="muted" id="status">—</div>
   </aside>
 
-  <main class="main">
-    <div id="editor"><p class="muted">Connect to your repo, or open <code>source.json</code> from disk, to begin.</p></div>
-  </main>
-</div>
-
-<div class="bar" id="bar">
-  <span class="muted" id="status">—</span>
-  <span style="flex:1"></span>
-  <button id="btnCheck">Check</button>
-  <button id="btnDownload">Download source.json</button>
-  <button class="primary" id="btnSave">Save to GitHub</button>
+  <main class="main"><div class="stage" id="stage"></div></main>
 </div>
 
 <!-- Connect -->
@@ -61,7 +81,7 @@
     <li>Generate, copy the <code>github_pat_…</code> string, paste it below</li>
   </ol>
   <div class="field"><label>Owner / repo</label><input id="inRepo" value="qingyimakes/past-lives"></div>
-  <div class="field"><label>Branch</label><input id="inBranch" placeholder="main" value="main"></div>
+  <div class="field"><label>Branch</label><input id="inBranch" value="main"></div>
   <div class="field"><label>Path to source.json</label><input id="inPath" value="Content/source.json"></div>
   <div class="field"><label>Token</label><input id="inToken" type="password" placeholder="github_pat_…"></div>
   <p id="connectMsg" class="muted hide" style="color:var(--danger);font-weight:500"></p>
@@ -91,7 +111,7 @@
   </div>
 </div></div>
 
-<script src="prompts.js?v=07bc28c9"></script>
-<script src="app.js?v=07bc28c9"></script>
+<script src="prompts.js?v=47106531"></script>
+<script src="app.js?v=47106531"></script>
 </body>
 </html>

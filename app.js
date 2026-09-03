@@ -5,6 +5,7 @@
 const S = {
   src: null, qid: null, lang: 'en', dirty: false,
   gh: JSON.parse(localStorage.getItem('pl.gh') || 'null'),
+  device: localStorage.getItem('pl.device') || 'std',
   sha: null,
 };
 const $ = (s) => document.querySelector(s);
@@ -12,6 +13,31 @@ const el = (t, c, h) => { const n = document.createElement(t); if (c) n.classNam
                           if (h !== undefined) n.innerHTML = h; return n; };
 const esc = (s) => (s ?? '').replace(/[<>&]/g, m => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[m]));
 const STATUSES = ['draft', 'published', 'hidden', 'archived'];
+
+/// Points, not pixels — the same units the app lays out in.
+const DEVICES = [
+  { id: 'se',      name: 'iPhone SE',        w: 375, h: 667 },
+  { id: 'mini',    name: 'iPhone 13 mini',   w: 375, h: 812 },
+  { id: 'std',     name: 'iPhone 16 / 17',   w: 393, h: 852 },
+  { id: 'plus',    name: 'iPhone 16 Plus',   w: 430, h: 932 },
+  { id: 'promax',  name: 'iPhone 17 Pro Max',w: 440, h: 956 },
+];
+const device = () => DEVICES.find(d => d.id === S.device) || DEVICES[2];
+
+/// Scale the device down when the window is shorter than it is, so the whole
+/// screen is always visible rather than clipped.
+function fitPhone() {
+  const phone = document.querySelector('.phone'), stage = $('#stage');
+  if (!phone || !stage) return;
+  const d = device(), frame = d.h + 20;                 // 10px bezel each side
+  const scale = Math.min(1, (window.innerHeight - 28) / frame);
+  phone.style.setProperty('--pw', d.w + 'px');
+  phone.style.setProperty('--ph', d.h + 'px');
+  phone.style.transform = `scale(${scale})`;
+  stage.style.height = Math.round(frame * scale) + 'px';
+  stage.style.width  = Math.round((d.w + 20) * scale) + 'px';
+}
+window.addEventListener('resize', fitPhone);
 
 function setStatus(msg, warn) {
   const n = $('#status'); n.textContent = msg; n.style.color = warn ? 'var(--danger)' : '';
@@ -161,33 +187,13 @@ function tools(node, buttons) {
 
 /* ── The post, drawn the way the app draws it ───────────────────────────── */
 function renderPost() {
-  const q = current(); const host = $('#editor'); host.innerHTML = '';
-  if (!q) { host.innerHTML = '<p class="muted">Select a post.</p>'; return; }
+  const q = current(); const stage = $('#stage'); stage.innerHTML = '';
+  const ctl = $('#postCtl');
+  if (!q) { ctl.classList.add('hide'); stage.innerHTML = '<p class="muted">Select a post.</p>'; return; }
+  ctl.classList.remove('hide');
+  renderPostControls(q);
 
-  // controls above the phone
-  const bar = el('div', 'row'); bar.style.marginBottom = '14px';
-  const tabs = el('div', 'langtabs');
-  for (const l of ['en', 'zh']) {
-    const b = el('button', S.lang === l ? 'on' : '', l === 'en' ? 'EN' : '中文');
-    b.onclick = () => { S.lang = l; renderPost(); }; tabs.appendChild(b);
-  }
-  bar.appendChild(tabs);
-  const sel = el('select'); sel.style.width = 'auto';
-  for (const s of STATUSES) { const o = el('option', '', s); o.value = s; if (q.status === s) o.selected = true; sel.appendChild(o); }
-  sel.onchange = () => { q.status = sel.value; markDirty(); renderList(); };
-  bar.appendChild(sel);
-  const date = el('input'); date.type = 'date'; date.value = q.date; date.style.width = 'auto';
-  date.onchange = () => { q.date = date.value; markDirty(); renderList(); };
-  bar.appendChild(date);
-  bar.appendChild(btn('+ comments', () => openAI('responses', q)));
-  bar.appendChild(btn('Delete post', () => {
-    if (!confirm(`Delete "${q.title.en}"? This cannot be undone from here.`)) return;
-    S.src.questions = S.src.questions.filter(x => x !== q); S.qid = null; markDirty(); renderList(); renderPost();
-  }, 'danger'));
-  host.appendChild(bar);
-
-  // phone
-  const stage = el('div', 'stage'), phone = el('div', 'phone');
+  const phone = el('div', 'phone');
   phone.innerHTML = `<div class="statusbar"><span>9:41</span><span>▲ ᯤ ▮</span></div>
                      <div class="wordmark">Past Lives</div>`;
   const scroll = el('div', 'scroll');
@@ -210,9 +216,9 @@ function renderPost() {
   for (const o of q.options) {
     const st = S.src.optionStyle[o.key];
     const row = el('div', 'optrow');
+    row.style.boxShadow = `inset 0 0 0 1px ${st.line}33`;
     const dot = el('div', 'optdot', o.key);
     dot.style.background = st.fill; dot.style.color = st.ink;
-    row.style.boxShadow = `inset 0 0 0 1px ${st.line}33`;
     row.appendChild(dot);
     row.appendChild(bind(el('div', 'optlabel'), o, 'label', `Answer ${o.key}`));
     opts.appendChild(row);
@@ -231,7 +237,32 @@ function renderPost() {
   const byWeight = [...q.responses].sort((a, b) => weight(b.voice) - weight(a.voice));
   for (const r of byWeight) scroll.appendChild(renderResponse(q, r));
 
-  phone.appendChild(scroll); stage.appendChild(phone); host.appendChild(stage);
+  phone.appendChild(scroll);
+  stage.appendChild(phone);
+  fitPhone();
+}
+
+/// Language, status, date and the destructive actions — all in the side panel
+/// so nothing overlaps the device.
+function renderPostControls(q) {
+  const tabs = $('#langTabs'); tabs.innerHTML = '';
+  for (const l of ['en', 'zh']) {
+    const b = el('button', S.lang === l ? 'on' : '', l === 'en' ? 'EN' : '中文');
+    b.onclick = () => { S.lang = l; renderPost(); }; tabs.appendChild(b);
+  }
+  const st = $('#pStatus'); st.innerHTML = '';
+  for (const v of STATUSES) { const o = el('option', '', v); o.value = v; if (q.status === v) o.selected = true; st.appendChild(o); }
+  st.onchange = () => { q.status = st.value; markDirty(); renderList(); };
+
+  const d = $('#pDate'); d.value = q.date;
+  d.onchange = () => { q.date = d.value; markDirty(); renderList(); };
+
+  $('#btnAddComments').onclick = () => openAI('responses', q);
+  $('#btnDelete').onclick = () => {
+    if (!confirm(`Delete "${q.title.en}"? This cannot be undone from here.`)) return;
+    S.src.questions = S.src.questions.filter(x => x !== q);
+    S.qid = null; markDirty(); renderList(); renderPost();
+  };
 }
 
 function renderResponse(q, r) {
@@ -376,6 +407,15 @@ function requireQuote(r) {
 }
 
 /* ── Wiring ─────────────────────────────────────────────────────────────── */
+const deviceSel = $('#device');
+for (const d of DEVICES) {
+  const o = el('option', '', `${d.name} · ${d.w}×${d.h}`);
+  o.value = d.id; if (d.id === S.device) o.selected = true; deviceSel.appendChild(o);
+}
+deviceSel.onchange = () => {
+  S.device = deviceSel.value; localStorage.setItem('pl.device', S.device); fitPhone();
+};
+
 $('#filter').onchange = renderList;
 $('#btnLoad').onclick = ghLoad;
 $('#btnSave').onclick = ghSave;
