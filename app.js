@@ -23,12 +23,30 @@ const api = (p, opt = {}) => fetch(`https://api.github.com/${p}`, {
   ...opt, headers: { Accept: 'application/vnd.github+json',
                      Authorization: `Bearer ${S.gh.token}`, ...(opt.headers || {}) } });
 
+function connectMsg(text) {
+  const n = $('#connectMsg');
+  n.textContent = text || '';
+  n.classList.toggle('hide', !text);
+}
+
 async function ghLoad() {
-  if (!S.gh) return;
+  if (!S.gh) return false;
   setStatus('loading…');
+  connectMsg('');
   const { repo, branch, path } = S.gh;
   const r = await api(`repos/${repo}/contents/${encodeURIComponent(path)}?ref=${branch}`);
-  if (!r.ok) return setStatus(`GitHub ${r.status} — check repo, branch and token scope`, true);
+  if (!r.ok) {
+    const why = {
+      401: 'token rejected — it is wrong, expired, or was copied with a space',
+      403: 'token lacks Contents permission on this repo (needs Read and write)',
+      404: `not found — check the repo name, that the branch is "${branch}", ` +
+           `and that the token lists this repository under Repository access`,
+      409: 'empty repository — push a first commit before connecting',
+    }[r.status] || (await r.text()).slice(0, 140);
+    setStatus(`GitHub ${r.status}: ${why}`, true);
+    connectMsg(`GitHub ${r.status} — ${why}`);
+    return false;
+  }
   const j = await r.json();
   S.sha = j.sha;
   S.src = JSON.parse(new TextDecoder().decode(
@@ -36,7 +54,8 @@ async function ghLoad() {
   S.dirty = false;
   $('#repoLine').textContent = `${repo} · ${branch}`;
   renderList(); if (!S.qid) selectFirst();
-  setStatus('loaded');
+  setStatus(`loaded ${S.src.questions.length} posts`);
+  return true;
 }
 
 async function ghSave() {
@@ -91,6 +110,13 @@ function renderList() {
   const f = $('#filter').value, list = $('#list'); list.innerHTML = '';
   const qs = S.src.questions.filter(q => f === 'all' || q.status === f)
                             .sort((a, b) => b.date.localeCompare(a.date));
+  const tally = {};
+  for (const q of S.src.questions) tally[q.status] = (tally[q.status] || 0) + 1;
+  const sum = el('div', 'muted');
+  sum.style.margin = '0 0 10px';
+  sum.innerHTML = STATUSES.filter(s => tally[s])
+    .map(s => `<span class="dot s-${s}"></span>${tally[s]} ${s}`).join(' &nbsp; ');
+  list.appendChild(sum);
   if (!qs.length) list.appendChild(el('p', 'muted', 'Nothing here.'));
   for (const q of qs) {
     const b = el('button', 'q-item' + (q.id === S.qid ? ' sel' : ''));
@@ -98,6 +124,17 @@ function renderList() {
                   `<div class="muted">${q.date} · ${q.responses.length} comments</div>`;
     b.onclick = () => { S.qid = q.id; renderList(); renderPost(); };
     list.appendChild(b);
+    const quick = el('div', 'row');
+    quick.style.cssText = 'margin:-2px 0 8px 12px';
+    const flip = (to, label) => {
+      const x = el('button', 'tiny', label);
+      x.onclick = (e) => { e.stopPropagation(); q.status = to; markDirty(); renderList(); renderPost(); };
+      quick.appendChild(x);
+    };
+    if (q.status !== 'published') flip('published', 'Publish');
+    if (q.status === 'published') flip('hidden', 'Hide');
+    if (q.status !== 'archived')  flip('archived', 'Archive');
+    list.appendChild(quick);
   }
 }
 const selectFirst = () => { const q = S.src.questions[0]; if (q) { S.qid = q.id; renderList(); renderPost(); } };
@@ -175,6 +212,7 @@ function renderPost() {
     const row = el('div', 'optrow');
     const dot = el('div', 'optdot', o.key);
     dot.style.background = st.fill; dot.style.color = st.ink;
+    row.style.boxShadow = `inset 0 0 0 1px ${st.line}33`;
     row.appendChild(dot);
     row.appendChild(bind(el('div', 'optlabel'), o, 'label', `Answer ${o.key}`));
     opts.appendChild(row);
@@ -210,7 +248,7 @@ function renderResponse(q, r) {
 
   // which option this voice holds — editable, and the whole disagreement model
   const pill = el('div', 'rpill', `${S.lang === 'zh' ? '投给 ' : 'Voted for '}${r.option} · ${esc(opt?.label[S.lang] || '')}`);
-  pill.style.background = st.fill + '1A'; pill.style.color = st.text; pill.style.cursor = 'pointer';
+  pill.style.background = st.bg; pill.style.color = st.text; pill.style.cursor = 'pointer';
   pill.title = 'click to move this voice to another option';
   pill.onclick = () => {
     const keys = q.options.map(o => o.key);
@@ -218,13 +256,6 @@ function renderResponse(q, r) {
     markDirty(); renderPost();
   };
   body.appendChild(pill);
-
-  body.appendChild(tools(bind(el('div', 'rclaim'), r, 'claim', 'The position, in plain modern language'),
-    [['rewrite', () => openAI('field', q, { key: 'claim', label: `${v.name.en}'s claim`, obj: r })],
-     ['shorter', () => openAI('field', q, { key: 'claim', label: `${v.name.en}'s claim`, obj: r, how: 'Make it shorter and blunter.' })]]));
-  body.appendChild(tools(bind(el('div', 'rdetail'), r, 'detail', 'What the position rests on, and what it costs'),
-    [['rewrite', () => openAI('field', q, { key: 'detail', label: `${v.name.en}'s detail`, obj: r })],
-     ['longer',  () => openAI('field', q, { key: 'detail', label: `${v.name.en}'s detail`, obj: r, how: 'Add one more sentence of substance.' })]]));
 
   // quote — required, and the source line is what makes it a quote
   r.quote = r.quote || { text: { en: '', zh: '' }, source: { en: '', zh: '' }, url: '', verified: false };
@@ -244,6 +275,13 @@ function renderResponse(q, r) {
   else qb.appendChild(el('div', 'badge' + (r.quote.verified ? ' ok' : ''),
         r.quote.verified ? 'verified against source' : 'not yet verified'));
   body.appendChild(qb);
+
+  body.appendChild(tools(bind(el('div', 'rclaim'), r, 'claim', 'One-line summary of the position'),
+    [['rewrite', () => openAI('field', q, { key: 'claim', label: `${v.name.en}'s claim`, obj: r })],
+     ['shorter', () => openAI('field', q, { key: 'claim', label: `${v.name.en}'s claim`, obj: r, how: 'Make it shorter and blunter.' })]]));
+  body.appendChild(tools(bind(el('div', 'rdetail'), r, 'detail', 'Explain the quote, sum up the voice, tie it to the question'),
+    [['rewrite', () => openAI('field', q, { key: 'detail', label: `${v.name.en}'s detail`, obj: r })],
+     ['longer',  () => openAI('field', q, { key: 'detail', label: `${v.name.en}'s detail`, obj: r, how: 'Add one more sentence of substance.' })]]));
 
   if (v.reach?.note) body.appendChild(el('div', 'rreach', esc(v.reach.note[S.lang] || v.reach.note.en)));
 
@@ -356,11 +394,18 @@ $('#btnConnect').onclick = () => {
   $('#sheetConnect').classList.remove('hide');
 };
 $('#btnConnectCancel').onclick = () => $('#sheetConnect').classList.add('hide');
-$('#btnConnectSave').onclick = () => {
-  S.gh = { repo: $('#inRepo').value.trim(), branch: $('#inBranch').value.trim() || 'main',
-           path: $('#inPath').value.trim(), token: $('#inToken').value.trim() };
-  localStorage.setItem('pl.gh', JSON.stringify(S.gh));
-  $('#sheetConnect').classList.add('hide'); ghLoad();
+$('#btnConnectSave').onclick = async () => {
+  const repo = $('#inRepo').value.trim(), token = $('#inToken').value.trim();
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return connectMsg('Repository must look like owner/name.');
+  if (!token) return connectMsg('Paste a token. Create one at github.com → Settings → Developer settings → Fine-grained tokens.');
+  S.gh = { repo, branch: $('#inBranch').value.trim() || 'main',
+           path: $('#inPath').value.trim() || 'Content/source.json', token };
+  connectMsg('connecting…');
+  // Keep the sheet open unless it actually worked, so a failure is visible.
+  if (await ghLoad()) {
+    localStorage.setItem('pl.gh', JSON.stringify(S.gh));
+    $('#sheetConnect').classList.add('hide');
+  }
 };
 $('#btnLocal').onclick = () => $('#fileIn').click();
 $('#fileIn').onchange = async (e) => {

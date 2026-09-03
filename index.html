@@ -52,11 +52,19 @@
 <div class="sheet hide" id="sheetConnect"><div class="inner">
   <h2>Connect to GitHub</h2>
   <p class="muted">The repo is the database. Your token is stored only in this browser and is sent
-     only to api.github.com. Use a fine-grained token with <b>Contents: read and write</b> on this one repo.</p>
-  <div class="field"><label>Owner / repo</label><input id="inRepo" placeholder="qingyimakes/past-lives"></div>
+     only to api.github.com.</p>
+  <ol class="muted" style="line-height:1.9;padding-left:18px">
+    <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">
+        github.com → fine-grained tokens → Generate new</a></li>
+    <li><b>Repository access</b> → Only select repositories → <b>past-lives</b></li>
+    <li><b>Permissions</b> → Repository permissions → <b>Contents</b> → <b>Read and write</b></li>
+    <li>Generate, copy the <code>github_pat_…</code> string, paste it below</li>
+  </ol>
+  <div class="field"><label>Owner / repo</label><input id="inRepo" value="qingyimakes/past-lives"></div>
   <div class="field"><label>Branch</label><input id="inBranch" placeholder="main" value="main"></div>
   <div class="field"><label>Path to source.json</label><input id="inPath" value="Content/source.json"></div>
   <div class="field"><label>Token</label><input id="inToken" type="password" placeholder="github_pat_…"></div>
+  <p id="connectMsg" class="muted hide" style="color:var(--danger);font-weight:500"></p>
   <div class="row">
     <button class="primary" id="btnConnectSave">Connect</button>
     <button id="btnConnectCancel">Cancel</button>

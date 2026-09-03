@@ -4,15 +4,25 @@ A single static page. No server, no database, no build step. The **repo is the
 database**: the editor reads and writes `Content/source.json` through the GitHub
 API, so hosting is free and every edit is a commit you can revert.
 
-## Getting it online (free)
+## Where it lives
 
-1. Push this repo to GitHub.
-2. Settings → Pages → deploy from branch, `main`, folder `/Editor`.
-3. Open the Pages URL on any device, phone included.
-4. Press **Connect** and give it:
-   - owner/repo, branch, and `Content/source.json`
+- **Editor (public):** https://qingyimakes.github.io/past-lives-editor/
+  Served from `qingyimakes/past-lives-editor`, which holds only these five
+  files. No content, so nothing to leak.
+- **Content and app (private):** `qingyimakes/past-lives`. Drafts, hidden posts
+  and the archive stay private because this repo is private.
+
+Editing here and running `Tools/publish-editor.sh` pushes the editor to the
+public repo. Never copy `source.json` into it.
+
+## First run
+
+1. Open the editor URL on any device, phone included.
+2. Press **Connect**:
+   - repo `qingyimakes/past-lives`, branch `main`, path `Content/source.json`
    - a **fine-grained personal access token** with *Contents: read and write*
-     on this repository only.
+     scoped to `past-lives` only
+     (github.com → Settings → Developer settings → Fine-grained tokens).
 
 The token is kept in that browser's localStorage and is sent only to
 api.github.com. Use a short expiry, and don't do this on a shared machine.
