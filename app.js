@@ -394,9 +394,25 @@ $('#btnConnect').onclick = () => {
   $('#sheetConnect').classList.remove('hide');
 };
 $('#btnConnectCancel').onclick = () => $('#sheetConnect').classList.add('hide');
+/// Accept what people actually paste: a full github.com URL, a trailing .git,
+/// stray slashes or spaces. Only complain when there is genuinely no repo.
+function normaliseRepo(raw) {
+  let v = (raw || '').trim();
+  v = v.replace(/^(https?:\/\/)?(www\.)?github\.com\//i, '');
+  v = v.replace(/\.git$/i, '').replace(/^\/+|\/+$/g, '');
+  const parts = v.split('/').filter(Boolean);
+  return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : null;
+}
+
 $('#btnConnectSave').onclick = async () => {
-  const repo = $('#inRepo').value.trim(), token = $('#inToken').value.trim();
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return showConnectError('Repository must look like owner/name.');
+  const typed = $('#inRepo').value, token = $('#inToken').value.trim();
+  const repo = normaliseRepo(typed);
+  if (!repo) {
+    return showConnectError(typed.trim()
+      ? `Could not read a repository from "${typed.trim()}". It needs both parts — qingyimakes/past-lives.`
+      : 'Repository is empty. It should be qingyimakes/past-lives.');
+  }
+  $('#inRepo').value = repo;
   if (!token) return showConnectError('Paste a token. Create one at github.com → Settings → Developer settings → Fine-grained tokens.');
   S.gh = { repo, branch: $('#inBranch').value.trim() || 'main',
            path: $('#inPath').value.trim() || 'Content/source.json', token };
