@@ -314,12 +314,11 @@ function renderResponse(q, r) {
   const st = S.src.optionStyle[r.option];
   const opt = q.options.find(o => o.key === r.option);
   const row = el('div', 'resprow');
-  row.appendChild(el('div', 'avatar', (v.name[S.lang] || v.name.en || '?').slice(0, 1)));
+  row.appendChild(el('div', 'avatar', avatarInitial(v.name[S.lang] || v.name.en)));
 
   const body = el('div', 'rbody');
-  body.appendChild(el('div', 'rname', esc(v.name[S.lang] || v.name.en)));
-  body.appendChild(el('div', 'rmeta',
-    `${esc(kindLabel(v.kind))} &nbsp; ${esc(v.origin?.[S.lang] || v.origin?.en || '')}`));
+  body.appendChild(el('div', 'rname',
+    `${esc(v.name[S.lang] || v.name.en)} <span class="rkind">${esc(kindLabel(v.kind))}</span>`));
 
   // which option this voice holds — editable, and the whole disagreement model
   const pill = el('div', 'rpill', `${S.lang === 'zh' ? '投给 ' : 'Voted for '}${r.option} · ${esc(opt?.label[S.lang] || '')}`);
@@ -369,6 +368,9 @@ function renderResponse(q, r) {
   row.appendChild(body);
   return row;
 }
+
+/// Titles arrive wrapped in punctuation; a bracket is not a monogram.
+const avatarInitial = (s) => (String(s || '').match(/[\p{L}\p{N}]/u) || ['?'])[0];
 
 const weight = (vid) => S.src.voices.find(v => v.id === vid)?.reach?.weight ?? 0;
 const kindLabel = (k) => S.src.kinds[k]?.[S.lang] || k || '';
