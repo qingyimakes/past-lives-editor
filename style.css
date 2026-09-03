@@ -129,7 +129,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--chip);padding:14
 .rbody{flex:1;min-width:0}
 .rname{font:700 16.5px/1.3 'DM Sans',sans-serif}
 .rmeta{font-size:14px;color:var(--ink-2);margin-top:2px}
-.rpill{display:inline-block;margin:9px 0;padding:5px 11px;border-radius:999px;
+.rpill{display:inline-block;margin:9px 0;padding:5px 11px;border-radius:12px;
   font-size:13px;font-weight:500;line-height:1.35}
 .rclaim{font-size:17px;font-weight:500;line-height:1.6;margin-bottom:9px}
 .rdetail{font-size:16.5px;line-height:1.7;color:#5A5A5A}
@@ -137,7 +137,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--chip);padding:14
 .rquote .qt{font:400 19px/1.6 Newsreader,Georgia,serif}
 .rquote .qs{font-size:13.5px;font-weight:500;color:var(--ink-2);margin-top:8px}
 .rquote .qs a{text-decoration:underline}
-.rreach{font-size:15px;line-height:1.55;color:var(--ink-3);margin-top:9px}
+.rreach{font:italic 400 15px/1.55 Newsreader,Georgia,serif;color:var(--ink-2);margin-top:9px}
 
 /* editing affordances */
 [contenteditable]{outline:none;border-radius:6px}
