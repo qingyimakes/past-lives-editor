@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Past Lives — editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Newsreader:ital,wght@0,400;1,400&family=Merriweather&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <aside class="side">
+    <div class="brand">Past Lives</div>
+    <div class="muted" id="repoLine">not connected</div>
+
+    <div class="row" style="margin:14px 0">
+      <button class="tiny" id="btnConnect">Connect</button>
+      <button class="tiny" id="btnLoad">Reload</button>
+      <button class="tiny primary" id="btnNew">New post</button>
+    </div>
+
+    <div class="field">
+      <label>Show</label>
+      <select id="filter">
+        <option value="all">All</option>
+        <option value="draft">Draft</option>
+        <option value="published">Published</option>
+        <option value="hidden">Hidden</option>
+        <option value="archived">Archived</option>
+      </select>
+    </div>
+
+    <div id="list"></div>
+  </aside>
+
+  <main class="main">
+    <div id="editor"><p class="muted">Connect to your repo, or open <code>source.json</code> from disk, to begin.</p></div>
+  </main>
+</div>
+
+<div class="bar" id="bar">
+  <span class="muted" id="status">—</span>
+  <span style="flex:1"></span>
+  <button id="btnCheck">Check</button>
+  <button id="btnDownload">Download source.json</button>
+  <button class="primary" id="btnSave">Save to GitHub</button>
+</div>
+
+<!-- Connect -->
+<div class="sheet hide" id="sheetConnect"><div class="inner">
+  <h2>Connect to GitHub</h2>
+  <p class="muted">The repo is the database. Your token is stored only in this browser and is sent
+     only to api.github.com. Use a fine-grained token with <b>Contents: read and write</b> on this one repo.</p>
+  <div class="field"><label>Owner / repo</label><input id="inRepo" placeholder="qingyimakes/past-lives"></div>
+  <div class="field"><label>Branch</label><input id="inBranch" placeholder="main" value="main"></div>
+  <div class="field"><label>Path to source.json</label><input id="inPath" value="Content/source.json"></div>
+  <div class="field"><label>Token</label><input id="inToken" type="password" placeholder="github_pat_…"></div>
+  <div class="row">
+    <button class="primary" id="btnConnectSave">Connect</button>
+    <button id="btnConnectCancel">Cancel</button>
+    <span style="flex:1"></span>
+    <button id="btnLocal">Open a file instead</button>
+  </div>
+  <input type="file" id="fileIn" accept="application/json" class="hide">
+</div></div>
+
+<!-- AI prompt / paste-back -->
+<div class="sheet hide" id="sheetAI"><div class="inner">
+  <h2 id="aiTitle">Ask Claude</h2>
+  <p class="muted">Nothing here calls an API — a Claude subscription doesn't include programmatic
+     access, so this hands you a prompt to run in the Claude you already pay for. Copy it, paste the
+     reply back below, and the editor will check and merge it.</p>
+  <div class="field"><label>1 · Prompt</label><pre id="aiPrompt"></pre>
+    <div class="row" style="margin-top:8px"><button class="primary" id="btnCopy">Copy prompt</button></div></div>
+  <div class="field"><label>2 · Paste Claude's reply</label>
+    <textarea id="aiReply" rows="8" placeholder="Paste the JSON block Claude returns"></textarea></div>
+  <div class="row">
+    <button class="primary" id="btnMerge">Check and merge</button>
+    <button id="btnAICancel">Cancel</button>
+    <span id="aiMsg" class="muted"></span>
+  </div>
+</div></div>
+
+<script src="prompts.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
