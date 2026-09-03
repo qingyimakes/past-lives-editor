@@ -398,45 +398,160 @@ function openAI(mode, q, ctx) {
     title = `Rewrite — ${ctx.label}`;
   }
   $('#aiTitle').textContent = title; $('#aiPrompt').textContent = p;
-  $('#aiReply').value = ''; $('#aiMsg').textContent = '';
+  $('#aiReply').value = ''; aiNote('');
   $('#sheetAI').classList.remove('hide');
 }
 
+/// Claude does not always fence the block, and does not always keep the
+/// wrapper. Read what it actually sent: a fenced block, bare JSON, or JSON
+/// sitting inside prose.
 function parseReply(text) {
-  const m = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  return JSON.parse((m ? m[1] : text).trim());
+  const raw = (text || '').trim();
+  if (!raw) throw new Error('Nothing pasted yet.');
+  const tries = [];
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) tries.push(fenced[1]);
+  tries.push(raw);
+  const span = firstJsonSpan(raw);
+  if (span) tries.push(span);
+  for (const t of tries) { try { return JSON.parse(t.trim()); } catch (e) {} }
+  throw new Error('Could not read that as JSON — paste the whole block, braces included.');
+}
+
+/// The first balanced { … } or [ … ], ignoring braces inside strings.
+function firstJsonSpan(s) {
+  const start = s.search(/[{[]/);
+  if (start < 0) return null;
+  const close = { '{': '}', '[': ']' };
+  const stack = [s[start]];
+  let inStr = false, esc = false;
+  for (let i = start + 1; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true;
+    else if (c === '{' || c === '[') stack.push(c);
+    else if (c === '}' || c === ']') {
+      if (close[stack.pop()] !== c) return null;
+      if (!stack.length) return s.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+/// Say what went wrong and keep the sheet open, so a rejected paste is never
+/// mistaken for a merge that did nothing.
+function aiFail(msg) {
+  const n = $('#aiMsg');
+  n.textContent = msg;
+  n.style.color = 'var(--danger)';
+  n.style.fontWeight = '500';
+  return false;
+}
+function aiNote(msg) { const n = $('#aiMsg'); n.textContent = msg; n.style.color = ''; n.style.fontWeight = ''; }
+
+/// Accept the shapes Claude actually returns: the documented wrapper, a bare
+/// array of comments, or a single comment object.
+function asList(data, ...keys) {
+  if (Array.isArray(data)) return data;
+  return keyList(data, ...keys);
+}
+/// Only named keys — never the top-level array, which is the comment list.
+function keyList(obj, ...keys) {
+  for (const k of keys) if (Array.isArray(obj?.[k])) return obj[k];
+  return null;
+}
+
+/// The quote rule, applied before anything is merged rather than halfway
+/// through — a rejected batch leaves the post exactly as it was.
+function quoteProblem(r) {
+  if (!r || typeof r !== 'object') return 'a comment is not an object';
+  if (!r.voice) return 'a comment has no "voice"';
+  if (!r.option) return `${r.voice}: no "option"`;
+  if (!r.claim?.en?.trim()) return `${r.voice}: no claim`;
+  if (!r.quote?.text?.en?.trim()) return `${r.voice}: no quote — rejected`;
+  if (!r.quote?.source?.en?.trim()) return `${r.voice}: quote has no source — rejected`;
+  return null;
 }
 
 function mergeReply() {
   let data;
   try { data = parseReply($('#aiReply').value); }
-  catch (e) { $('#aiMsg').textContent = 'Could not read that as JSON.'; return; }
+  catch (e) { return aiFail(String(e.message || e)); }
 
-  try {
-    if (aiMode === 'field') {
-      const obj = aiCtx.obj || aiCtx.q;
-      if (!data.en || !data.zh) throw new Error('needs both en and zh');
-      obj[aiCtx.key] = { en: data.en, zh: data.zh };
-    } else if (aiMode === 'responses') {
-      addVoices(data.newVoices || []);
-      const have = new Set(aiCtx.q.responses.map(r => r.voice));
-      for (const r of data.responses || []) {
-        if (have.has(r.voice)) continue;
-        requireQuote(r); aiCtx.q.responses.push(r); have.add(r.voice);
-      }
-    } else if (aiMode === 'new') {
-      addVoices(data.newVoices || []);
-      (data.responses || []).forEach(requireQuote);
-      if (S.src.questions.some(q => q.id === data.id)) data.id += '-2';
-      const q = { id: data.id, date: data.date, status: 'draft', title: data.title, why: data.why,
-                  options: data.options, works: data.works || [], responses: data.responses || [] };
-      S.src.questions.unshift(q); S.qid = q.id;
-    }
-  } catch (e) { $('#aiMsg').textContent = String(e.message || e); return; }
+  if (aiMode === 'field') return mergeField(data);
+  if (aiMode === 'responses') return mergeResponses(data, aiCtx.q);
+  if (aiMode === 'new') return mergeNewPost(data);
+}
 
-  markDirty(); $('#sheetAI').classList.add('hide'); renderList(); renderPost();
+function mergeField(data) {
+  const obj = aiCtx.obj || aiCtx.q;
+  if (typeof data?.en !== 'string' || typeof data?.zh !== 'string')
+    return aiFail('Expected {"en":"…","zh":"…"} — both languages are required.');
+  obj[aiCtx.key] = { en: data.en, zh: data.zh };
+  aiDone('rewrote ' + aiCtx.label);
+}
+
+function mergeResponses(data, q) {
+  const incoming = asList(data, 'responses', 'comments') || (data?.voice ? [data] : null);
+  if (!incoming) return aiFail('No comments in that reply — expected {"responses":[ … ]}.');
+  if (!incoming.length) return aiFail('That reply carries an empty list of comments.');
+
+  const newVoices = keyList(data, 'newVoices', 'voices') || [];
+  const known = new Set([...S.src.voices.map(v => v.id), ...newVoices.map(v => v?.id)]);
+  const have = new Set(q.responses.map(r => r.voice));
+
+  const problems = [], fresh = [], dup = [];
+  for (const r of incoming) {
+    const why = quoteProblem(r);
+    if (why) { problems.push(why); continue; }
+    if (!q.options.some(o => o.key === r.option)) { problems.push(`${r.voice}: option ${r.option} is not on this question`); continue; }
+    if (!known.has(r.voice)) { problems.push(`${r.voice}: unknown voice — it needs a "newVoices" entry`); continue; }
+    if (have.has(r.voice)) { dup.push(r.voice); continue; }
+    fresh.push(r); have.add(r.voice);
+  }
+  // Nothing is merged unless all of it can be.
+  if (problems.length) return aiFail(problems.slice(0, 3).join(' · ') + (problems.length > 3 ? ` (+${problems.length - 3} more)` : ''));
+  if (!fresh.length) return aiFail(`already on this post: ${dup.join(', ')} — ask Claude for different voices.`);
+
+  addVoices(newVoices);
+  for (const r of fresh) { r.quote.verified = false; q.responses.push(r); }
+  aiDone(`added ${fresh.length} comment${fresh.length > 1 ? 's' : ''}` +
+         (dup.length ? ` · skipped ${dup.length} already here` : ''));
+}
+
+function mergeNewPost(data) {
+  const q = data?.question && data.question.title ? { ...data.question } : data;
+  if (!q?.title?.en) return aiFail('That reply has no question title.');
+  if (!Array.isArray(q.options) || q.options.length !== 4) return aiFail('A post needs exactly four options.');
+  const responses = keyList(q, 'responses') || keyList(data, 'responses') || [];
+  const newVoices = keyList(q, 'newVoices', 'voices') || keyList(data, 'newVoices', 'voices') || [];
+  const known = new Set([...S.src.voices.map(v => v.id), ...newVoices.map(v => v?.id)]);
+  const problems = [];
+  for (const r of responses) {
+    const why = quoteProblem(r);
+    if (why) problems.push(why);
+    else if (!known.has(r.voice)) problems.push(`${r.voice}: unknown voice — it needs a "newVoices" entry`);
+  }
+  if (problems.length) return aiFail(problems.slice(0, 3).join(' · ') + (problems.length > 3 ? ` (+${problems.length - 3} more)` : ''));
+
+  addVoices(newVoices);
+  let id = q.id || 'q-untitled';
+  while (S.src.questions.some(x => x.id === id)) id += '-2';
+  responses.forEach(r => { r.quote.verified = false; });
+  const post = { id, date: q.date || new Date().toISOString().slice(0, 10), status: 'draft',
+                 title: q.title, why: q.why || { en: '', zh: '' }, options: q.options,
+                 works: q.works || [], responses };
+  S.src.questions.unshift(post); S.qid = id;
+  aiDone(`created "${q.title.en.slice(0, 40)}" with ${responses.length} comment${responses.length === 1 ? '' : 's'}`);
+}
+
+function aiDone(what) {
+  markDirty();
+  $('#sheetAI').classList.add('hide');
+  aiNote('');
+  renderList(); renderPost();
   const problems = check();
-  setStatus(problems.length ? `merged — ${problems.length} problem(s), press Check` : 'merged');
+  setStatus(problems.length ? `${what} — ${problems.length} problem(s), press Check` : what);
 }
 function addVoices(list) {
   for (const v of list) {
@@ -446,12 +561,6 @@ function addVoices(list) {
                         reach: v.reach || null, works: v.works || [] });
   }
 }
-function requireQuote(r) {
-  if (!r.quote?.text?.en?.trim() || !r.quote?.source?.en?.trim())
-    throw new Error(`${r.voice}: every comment needs a quote with a source — rejected`);
-  r.quote.verified = false;
-}
-
 /* ── Wiring ─────────────────────────────────────────────────────────────── */
 const deviceSel = $('#device');
 for (const d of DEVICES) {

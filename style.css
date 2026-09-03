@@ -70,6 +70,12 @@ a{color:var(--ink-2)}
 .sheet{position:fixed;inset:0;background:rgba(36,50,53,.35);display:grid;place-items:center;z-index:20}
 .sheet .inner{background:var(--surface);border-radius:var(--r-l);padding:24px;width:min(760px,92vw);
   max-height:86vh;overflow-y:auto}
+/* The buttons — and whatever the merge has to say — stay in view however long
+   the prompt is. A rejected paste must never look like nothing happening. */
+.sheet .actions{position:sticky;bottom:-24px;background:var(--surface);
+  padding:12px 0 0;margin-top:4px;box-shadow:0 -14px 18px 6px var(--surface)}
+.sheet .actions p{margin:0 0 10px}
+.sheet .actions p:empty{display:none}
 pre{white-space:pre-wrap;word-break:break-word;background:var(--chip);padding:14px;
   border-radius:12px;font-size:12.5px;max-height:320px;overflow-y:auto}
 .hide{display:none}
