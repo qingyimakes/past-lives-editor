@@ -2,7 +2,7 @@
    arrives already holding the standard the validator enforces. */
 
 const HOUSE_RULES = `
-You are drafting for Past Lives, an app where historical thinkers appear as the
+You are drafting for Still, an app where historical thinkers appear as the
 comment section under a question about modern life.
 
 Rules that outrank everything else:
@@ -75,7 +75,7 @@ Shape:
 function promptRewrite(instruction, label, value, context) {
   return `${HOUSE_RULES}
 
-Rewrite one field of an existing Past Lives post.
+Rewrite one field of an existing Still post.
 
 Field: ${label}
 Instruction: ${instruction}

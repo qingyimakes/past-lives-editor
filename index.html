@@ -3,16 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Past Lives — editor</title>
+<title>Still — editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Newsreader:ital,wght@0,400;1,400&family=Merriweather&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=fc7352c7">
+<link rel="stylesheet" href="style.css?v=e1fbcaa1">
 </head>
 <body>
+<!-- Save sits top right on every screen size, where people look for it. -->
+<div class="savebar"><button class="primary" id="btnSave">Save</button></div>
 <div class="wrap">
   <aside class="side">
-    <div class="brand">Past Lives</div>
+    <div class="brand">Still</div>
     <div class="muted" id="repoLine">not connected</div>
 
     <div class="row" style="margin:12px 0 16px">
@@ -52,13 +54,14 @@
     </div>
     <div id="list"></div>
 
-    <div class="sep"></div>
-    <div class="row" style="margin-bottom:8px">
-      <button class="tiny" id="btnCheck">Check</button>
-      <button class="tiny" id="btnDownload">Download</button>
-      <button class="tiny primary" id="btnSave">Save</button>
+    <!-- Pinned: what just happened must not scroll away behind the post list. -->
+    <div class="side-footer">
+      <div class="row" style="margin-bottom:8px">
+        <button class="tiny" id="btnCheck">Check</button>
+        <button class="tiny" id="btnDownload">Download</button>
+      </div>
+      <div class="muted" id="status">—</div>
     </div>
-    <div class="muted" id="status">—</div>
   </aside>
 
   <main class="main"><div class="stage" id="stage"></div></main>
@@ -68,6 +71,10 @@
     <div class="inspect-head">Post</div>
     <div id="inspectEmpty" class="muted">Select a post on the left.</div>
     <div id="inspectBody" class="hide">
+      <div class="field">
+        <label>Preview</label>
+        <div class="langtabs" id="viewTabs"></div>
+      </div>
       <div class="field">
         <label>Identifier</label>
         <div class="mono" id="iId">—</div>
@@ -112,11 +119,11 @@
   <ol class="muted" style="line-height:1.9;padding-left:18px">
     <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">
         github.com → fine-grained tokens → Generate new</a></li>
-    <li><b>Repository access</b> → Only select repositories → <b>past-lives</b></li>
+    <li><b>Repository access</b> → Only select repositories → <b>philosophy-app</b></li>
     <li><b>Permissions</b> → Repository permissions → <b>Contents</b> → <b>Read and write</b></li>
     <li>Generate, copy the <code>github_pat_…</code> string, paste it below</li>
   </ol>
-  <div class="field"><label>Owner / repo</label><input id="inRepo" value="qingyimakes/past-lives"></div>
+  <div class="field"><label>Owner / repo</label><input id="inRepo" value="qingyimakes/philosophy-app"></div>
   <div class="field"><label>Branch</label><input id="inBranch" value="main"></div>
   <div class="field"><label>Path to source.json</label><input id="inPath" value="Content/source.json"></div>
   <div class="field"><label>Token</label><input id="inToken" type="password" placeholder="github_pat_…"></div>
@@ -149,7 +156,7 @@
   </div>
 </div></div>
 
-<script src="prompts.js?v=fc7352c7"></script>
-<script src="app.js?v=fc7352c7"></script>
+<script src="prompts.js?v=e1fbcaa1"></script>
+<script src="app.js?v=e1fbcaa1"></script>
 </body>
 </html>

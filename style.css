@@ -1,4 +1,4 @@
-/* Past Lives editor. Same tokens as the app so what you edit looks like what ships. */
+/* Still editor. Same tokens as the app so what you edit looks like what ships. */
 :root{
   --bg:#FAFAFA; --surface:#fff; --ink:#243235; --ink-2:#6B6B6B; --ink-3:#5F5B54;
   --body:#3C3C3C; --hair:rgba(36,50,53,.09); --hair-2:rgba(36,50,53,.16);
@@ -23,7 +23,16 @@ textarea{line-height:1.6}
 a{color:var(--ink-2)}
 /* Left: where you are. Right: what you are editing. Middle: the phone, untouched. */
 .wrap{display:grid;grid-template-columns:310px minmax(0,1fr) 320px;height:100vh;overflow:hidden}
-.side{border-right:1px solid var(--hair);padding:18px 16px 32px;overflow-y:auto;height:100vh}
+.side{border-right:1px solid var(--hair);padding:18px 16px 0;overflow-y:auto;height:100vh}
+.side-footer{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--hair);
+  margin:16px -16px 0;padding:12px 16px 14px}
+/* Save: always visible, top right. A dot means there is something to save. */
+.savebar{position:fixed;top:12px;right:16px;z-index:30}
+.savebar button{box-shadow:0 2px 10px rgba(36,50,53,.18)}
+#btnSave.dirty::after{content:'';display:inline-block;width:7px;height:7px;margin-left:8px;
+  border-radius:50%;background:var(--accent);vertical-align:middle}
+#status{min-height:19px;transition:color .2s}
+#status.said{color:var(--ok);font-weight:500}
 .inspect{border-left:1px solid var(--hair);padding:18px 16px 32px;overflow-y:auto;height:100vh;
   background:var(--surface)}
 .inspect-head{font:italic 400 19px/1 Newsreader,Georgia,serif;margin-bottom:14px}
@@ -173,3 +182,39 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--chip);padding:14
 .langtabs button{padding:5px 13px;font-size:14px;background:transparent}
 .langtabs button.on{background:var(--ink);color:#fff}
 .respctl{display:flex;gap:6px;justify-content:flex-end;margin-top:6px}
+
+/* ── Matching the app, screen for screen ───────────────────────────────────
+   The app has two views of a question and they are not the same card, so the
+   preview has both. Later rules; they override the block above by cascade. */
+.phone{position:relative}
+.phone .scroll{padding-bottom:32px}                 /* Space.pageBottom */
+.phone.is-thread .scroll{padding-top:44px}          /* room the back pill floats over */
+
+.qcard.expanded{background:transparent;padding:20px;
+  box-shadow:inset 0 0 0 1px rgba(36,50,53,.16)}    /* hairlineCard */
+.qcard.expanded .qtitle{font-size:30px}             /* TextStyle.title */
+
+.backpill{position:absolute;top:86px;left:16px;z-index:2;padding:9px 15px;border-radius:999px;
+  background:rgba(255,255,255,.72);backdrop-filter:blur(12px);font-size:14.5px;font-weight:500;
+  box-shadow:0 1px 6px rgba(36,50,53,.10)}
+
+/* What a vote unlocks, on the feed card only. */
+.wideaction{margin-top:16px;padding:14px 16px;border-radius:999px;background:var(--ink);
+  color:var(--accent);text-align:center;font-size:16px;font-weight:500}
+
+/* Theme.Space.s between options, Radius.inner, hairlineStrong, 12/16 padding. */
+.opts{gap:8px}
+.optrow{gap:12px;padding:12px 16px;border-radius:16px}
+
+.rquote{padding:12px 16px}
+.rfoot{display:flex;align-items:center;gap:12px;margin-top:8px}
+.rorigin{flex:1;min-width:0;font-size:14px;color:var(--ink-2)}
+
+/* The app sits in a TabView; those 60pt are not the post's. */
+.tabbar{flex:none;height:60px;display:flex;border-top:1px solid var(--hair);
+  background:rgba(250,250,250,.92);backdrop-filter:blur(12px)}
+.tabbar .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;color:#7C8B8E}
+.tabbar .tab.on{color:var(--ink)}
+.tabbar .ticon{font-size:17px;line-height:1}
+.tabbar .tlabel{font-size:11.5px;font-weight:500}

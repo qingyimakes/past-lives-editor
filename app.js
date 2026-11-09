@@ -1,4 +1,4 @@
-/* Past Lives editor.
+/* Still editor.
    The repo is the database: this page reads and writes Content/source.json
    through the GitHub API. Nothing else is hosted, and nothing calls an AI API. */
 
@@ -6,6 +6,8 @@ const S = {
   src: null, qid: null, lang: 'en', dirty: false,
   gh: JSON.parse(localStorage.getItem('pl.gh') || 'null'),
   device: localStorage.getItem('pl.device') || 'std',
+  view: localStorage.getItem('pl.view') || 'thread',   // which of the app's two screens
+
   sha: null,
 };
 const $ = (s) => document.querySelector(s);
@@ -41,9 +43,14 @@ function fitPhone() {
 window.addEventListener('resize', fitPhone);
 
 function setStatus(msg, warn) {
-  const n = $('#status'); n.textContent = msg; n.style.color = warn ? 'var(--danger)' : '';
+  const n = $('#status');
+  n.textContent = msg;
+  n.style.color = warn ? 'var(--danger)' : '';
+  // A merge that worked should read as an event, not as the same grey line.
+  n.classList.remove('said');
+  if (!warn) { void n.offsetWidth; n.classList.add('said'); setTimeout(() => n.classList.remove('said'), 2600); }
 }
-function markDirty() { S.dirty = true; setStatus('unsaved changes'); }
+function markDirty() { S.dirty = true; $('#btnSave').classList.add('dirty'); setStatus('unsaved changes'); }
 
 /* ── GitHub ─────────────────────────────────────────────────────────────── */
 const api = (p, opt = {}) => fetch(`https://api.github.com/${p}`, {
@@ -78,7 +85,7 @@ async function ghLoad() {
   S.sha = j.sha;
   S.src = JSON.parse(new TextDecoder().decode(
     Uint8Array.from(atob(j.content.replace(/\n/g, '')), c => c.charCodeAt(0))));
-  S.dirty = false;
+  S.dirty = false; $('#btnSave').classList.remove('dirty');
   $('#repoLine').textContent = `${repo} · ${branch}`;
   renderList(); if (!S.qid) selectFirst();
   setStatus(`loaded ${S.src.questions.length} posts`);
@@ -101,7 +108,7 @@ async function ghSave() {
                       { method: 'PUT', body: JSON.stringify(body) });
   if (!r.ok) return setStatus(`save failed: ${r.status} ${(await r.text()).slice(0,120)}`, true);
   S.sha = (await r.json()).content.sha;
-  S.dirty = false;
+  S.dirty = false; $('#btnSave').classList.remove('dirty');
   setStatus('saved to GitHub');
 }
 
@@ -199,13 +206,17 @@ function renderPost() {
   renderPostControls(q);
   renderInspector(q);
 
-  const phone = el('div', 'phone');
+  const thread = S.view === 'thread';
+  const phone = el('div', 'phone' + (thread ? ' is-thread' : ' is-feed'));
   phone.innerHTML = `<div class="statusbar"><span>9:41</span><span>▲ ᯤ ▮</span></div>
-                     <div class="wordmark">Past Lives</div>`;
+                     <div class="wordmark">Still</div>` +
+    // ThreadView floats a back pill over the content; the feed has none.
+    (thread ? `<div class="backpill">${S.lang === 'zh' ? '← 返回信息流' : '← Back to the feed'}</div>` : '');
   const scroll = el('div', 'scroll');
 
-  // ── question card
-  const card = el('div', 'qcard');
+  // ── question card. In the feed it is a white card with the display title;
+  // in the thread the same card is transparent, outlined, and one size down.
+  const card = el('div', 'qcard' + (thread ? ' expanded' : ''));
   const head = el('div', 'qhead');
   head.appendChild(el('div', 'qdate', dateLabel(q.date)));
   head.appendChild(el('div', 'qicons', '♡ &nbsp; ⚑'));
@@ -220,18 +231,25 @@ function renderPost() {
 
   const opts = el('div', 'opts');
   for (const o of q.options) {
-    const st = S.src.optionStyle[o.key];
     const row = el('div', 'optrow');
-    row.style.boxShadow = `inset 0 0 0 1px ${st.line}33`;
-    const dot = el('div', 'optdot', o.key);
-    dot.style.background = st.fill; dot.style.color = st.ink;
-    row.appendChild(dot);
+    // Unanswered is the state a reader meets: neutral outline, grey key. The
+    // option's colour arrives with a vote, and in the comment pills below.
+    row.appendChild(el('div', 'optdot', o.key));
     row.appendChild(bind(el('div', 'optlabel'), o, 'label', `Answer ${o.key}`));
     opts.appendChild(row);
   }
   card.appendChild(opts);
   card.appendChild(el('div', 'qlead', S.src.strings[S.lang].lead));
   scroll.appendChild(card);
+
+  if (!thread) {                       // the feed's own footer: what a vote unlocks
+    scroll.appendChild(el('div', 'wideaction', S.lang === 'zh' ? '打开讨论' : 'Open the thread'));
+    phone.appendChild(scroll);
+    phone.appendChild(tabBar());
+    stage.appendChild(phone);
+    fitPhone();
+    return;
+  }
 
   // ── thread
   scroll.appendChild(el('div', 'threadhead', S.lang === 'zh' ? '讨论 · 按影响力排序' : 'Comments from the past lives'));
@@ -240,12 +258,26 @@ function renderPost() {
   for (const o of q.options) chips.appendChild(el('div', 'fchip', o.key));
   scroll.appendChild(chips);
 
-  const byWeight = [...q.responses].sort((a, b) => weight(b.voice) - weight(a.voice));
-  for (const r of byWeight) scroll.appendChild(renderResponse(q, r));
+  for (const r of threadOrder(q)) scroll.appendChild(renderResponse(q, r));
 
   phone.appendChild(scroll);
+  phone.appendChild(tabBar());
   stage.appendChild(phone);
   fitPhone();
+}
+
+/// The app sits in a TabView; the preview is a lie without it, and the tab bar
+/// is 60pt of the screen the post does not get.
+function tabBar() {
+  const nav = el('div', 'tabbar');
+  const items = S.lang === 'zh' ? ['首页', '浏览', '我'] : ['Home', 'Explore', 'Me'];
+  const icons = ['\u2302', '\u25a6', '\u25cb'];
+  items.forEach((label, i) => {
+    const t = el('div', 'tab' + (i === 0 ? ' on' : ''));
+    t.innerHTML = `<div class="ticon">${icons[i]}</div><div class="tlabel">${label}</div>`;
+    nav.appendChild(t);
+  });
+  return nav;
 }
 
 /// Left panel: where you are — language, status, date. The post's coordinates,
@@ -272,6 +304,14 @@ function renderInspector(q) {
   $('#inspectBody').classList.remove('hide');
   $('#iId').textContent = q.id;
 
+  // The app has two screens for a question, and they are not the same card.
+  const vt = $('#viewTabs'); vt.innerHTML = '';
+  for (const [id, label] of [['feed', 'Feed'], ['thread', 'Thread']]) {
+    const b = el('button', S.view === id ? 'on' : '', label);
+    b.onclick = () => { S.view = id; localStorage.setItem('pl.view', id); renderPost(); };
+    vt.appendChild(b);
+  }
+
   const spread = new Set(q.responses.map(r => r.option));
   $('#iShape').textContent =
     `${q.options.length} options · ${q.responses.length} comments · ` +
@@ -279,8 +319,7 @@ function renderInspector(q) {
 
   const list = $('#iResponses'); list.innerHTML = '';
   if (!q.responses.length) list.appendChild(el('p', 'muted', 'No comments yet.'));
-  const byWeight = [...q.responses].sort((a, b) => weight(b.voice) - weight(a.voice));
-  for (const r of byWeight) {
+  for (const r of threadOrder(q)) {
     const v = S.src.voices.find(x => x.id === r.voice);
     const st = S.src.optionStyle[r.option] || {};
     const row = el('div', 'i-resp');
@@ -310,6 +349,8 @@ function renderInspector(q) {
   };
 }
 
+const threadOrder = (q) => [...q.responses].sort((a, b) => score(b) - score(a));
+
 function renderResponse(q, r) {
   const v = S.src.voices.find(x => x.id === r.voice) || { name: { en: r.voice, zh: r.voice }, origin: {} };
   const st = S.src.optionStyle[r.option];
@@ -334,7 +375,7 @@ function renderResponse(q, r) {
   const qb = el('div', 'rquote');
   qb.appendChild(bind(el('div', 'qt'), r.quote, 'text', 'Verbatim quote — never paraphrase here'));
   const srcLine = el('div', 'qs');
-  srcLine.appendChild(document.createTextNode(S.lang === 'zh' ? '引用了 ' : 'Quoting '));
+  srcLine.appendChild(document.createTextNode('\u2014 '));
   const srcEd = bind(el('span'), r.quote, 'source', 'Author, Work I.2, trans. Name');
   srcEd.style.textDecoration = 'underline';
   srcLine.appendChild(srcEd);
@@ -356,11 +397,14 @@ function renderResponse(q, r) {
 
   if (v.reach?.note) body.appendChild(el('div', 'rreach', esc(v.reach.note[S.lang] || v.reach.note.en)));
 
-  const ctl = el('div', 'respctl');
-  ctl.appendChild(btn('Remove', () => {
+  // ResponseRow closes with where the voice comes from; the editor's own
+  // action sits where the app puts like / share / report.
+  const foot = el('div', 'rfoot');
+  foot.appendChild(el('div', 'rorigin', esc(v.origin?.[S.lang] || v.origin?.en || '')));
+  foot.appendChild(btn('Remove', () => {
     q.responses = q.responses.filter(x => x !== r); markDirty(); renderPost();
-  }, 'danger tiny'));
-  body.appendChild(ctl);
+  }, 'danger'));
+  body.appendChild(foot);
 
   row.appendChild(body);
   return row;
@@ -423,6 +467,18 @@ function sourceLink(href) {
 }
 
 const weight = (vid) => S.src.voices.find(v => v.id === vid)?.reach?.weight ?? 0;
+/// ContentStore.ThreadRow.score, ported exactly. Reach first, then a stable
+/// hash — without the tiebreak, voices of equal weight sort differently here
+/// than they do on the phone.
+function stableHash(str) {
+  let h = 0;
+  for (const ch of str) h = (h * 31 + ch.codePointAt(0)) % 100000;
+  return h;
+}
+function score(r) {
+  const v = S.src.voices.find(x => x.id === r.voice);
+  return weight(r.voice) * 1000 + stableHash((v?.name?.en || '') + '|' + (r.claim?.en || '')) % 900;
+}
 const kindLabel = (k) => S.src.kinds[k]?.[S.lang] || k || '';
 function dateLabel(iso) {
   const d = new Date(iso + 'T00:00:00Z');
@@ -657,8 +713,8 @@ $('#btnConnectSave').onclick = async () => {
   const repo = normaliseRepo(typed);
   if (!repo) {
     return showConnectError(typed.trim()
-      ? `Could not read a repository from "${typed.trim()}". It needs both parts — qingyimakes/past-lives.`
-      : 'Repository is empty. It should be qingyimakes/past-lives.');
+      ? `Could not read a repository from "${typed.trim()}". It needs both parts — qingyimakes/philosophy-app.`
+      : 'Repository is empty. It should be qingyimakes/philosophy-app.');
   }
   $('#inRepo').value = repo;
   if (!token) return showConnectError('Paste a token. Create one at github.com → Settings → Developer settings → Fine-grained tokens.');
