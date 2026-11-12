@@ -21,8 +21,8 @@ input,textarea,select{font:inherit;width:100%;padding:10px 12px;border:1px solid
   border-radius:12px;background:var(--surface);color:var(--ink);resize:vertical}
 textarea{line-height:1.6}
 a{color:var(--ink-2)}
-/* Left: where you are. Right: what you are editing. Middle: the phone, untouched. */
-.wrap{display:grid;grid-template-columns:310px minmax(0,1fr) 320px;height:100vh;overflow:hidden}
+/* Left: where you are. Right: what you are editing. Middle: the web page itself. */
+.wrap{display:grid;grid-template-columns:290px minmax(0,1fr) 400px;height:100vh;overflow:hidden}
 .side{border-right:1px solid var(--hair);padding:18px 16px 0;overflow-y:auto;height:100vh}
 .side-footer{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--hair);
   margin:16px -16px 0;padding:12px 16px 14px}
@@ -38,19 +38,16 @@ a{color:var(--ink-2)}
 .inspect-head{font:italic 400 19px/1 Newsreader,Georgia,serif;margin-bottom:14px}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:var(--ink-3);
   word-break:break-all}
-.i-resp{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--hair)}
-.i-resp:last-child{border-bottom:0}
-.i-resp .nm{flex:1;min-width:0;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.i-resp{cursor:pointer;border-radius:10px;margin:0 -6px;padding-left:6px;padding-right:6px}
-.i-resp:hover{background:var(--chip)}
 .i-key{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
   font:700 12px/1 'DM Sans',sans-serif;cursor:pointer}
-/* The phone gets the whole viewport height; every control lives in a side panel. */
-.main{height:100vh;display:flex;align-items:flex-start;justify-content:center;
+/* The preview gets the whole middle; every control lives in a side panel. */
+.main{height:100vh;display:flex;flex-direction:column;align-items:center;
   overflow:hidden;padding:12px}
 .sep{height:1px;background:var(--hair);margin:16px 0}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .two-col label{margin-bottom:6px}
+.two-col > *{min-width:0}
+.two-col select{padding-right:4px}
 .brand{font:italic 400 21px/1 Newsreader,Georgia,serif;margin-bottom:4px}
 .muted{color:var(--ink-2);font-size:13.5px}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -91,7 +88,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--chip);padding:14
   border-radius:12px;font-size:12.5px;max-height:320px;overflow-y:auto}
 .hide{display:none}
 @media(max-width:1180px){
-  .wrap{grid-template-columns:280px minmax(0,1fr) 280px}
+  .wrap{grid-template-columns:250px minmax(0,1fr) 340px}
 }
 @media(max-width:900px){
   .wrap{grid-template-columns:1fr;height:auto;overflow:visible}
@@ -102,119 +99,48 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--chip);padding:14
   .two{grid-template-columns:1fr}
 }
 
-/* ── The post rendered exactly as the app draws it ─────────────────────── */
-.stage{display:flex;justify-content:center;align-items:flex-start}
-/* A real device, not a tall strip: 393x852pt, with the content scrolling
-   inside it exactly as it does on the phone. */
-.phone{width:var(--pw,393px);height:var(--ph,852px);flex:none;background:var(--bg);
-  border-radius:44px;border:10px solid #1c1c1e;box-shadow:0 24px 60px rgba(36,50,53,.18);
-  overflow:hidden;display:flex;flex-direction:column;transform-origin:top center}
-.phone .statusbar{flex:none;height:44px;display:flex;align-items:center;
-  justify-content:space-between;padding:0 26px;font-size:13px;font-weight:600}
-.phone .wordmark{flex:none;font:italic 400 17px/1 Newsreader,Georgia,serif;
-  text-align:center;padding:6px 0 14px}
-/* position:relative so a comment's offsetTop is measured against the scroller
-   itself — the phone is transform-scaled, and rects are not. */
-.phone .scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
-  padding:0 16px 28px;scrollbar-width:thin;position:relative}
-.phone .scroll::-webkit-scrollbar{width:5px}
-.phone .scroll::-webkit-scrollbar-thumb{background:var(--hair-2);border-radius:3px}
 
-/* question card */
-.qcard{background:#fff;border-radius:24px;padding:24px}
-.qhead{display:flex;align-items:flex-start;gap:8px;margin-bottom:20px}
-.qdate{flex:1;font-size:14.5px;font-weight:500;color:var(--ink-2)}
-.qicons{display:flex;gap:2px;color:var(--ink-2)}
-.qtitle{font:400 36px/1.24 Newsreader,Georgia,serif;letter-spacing:-.01em;margin:-6px 0 0}
-.qwhy{font-size:17px;line-height:1.65;color:var(--body);margin-top:10px}
-.qjoin{font-size:14.5px;color:var(--ink-2);margin-top:6px}
-.opts{display:flex;flex-direction:column;gap:10px;margin-top:20px}
-.optrow{display:flex;align-items:center;gap:13px;padding:14px 16px;border-radius:24px;
-  box-shadow:inset 0 0 0 1px rgba(36,50,53,.14)}
-.optdot{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;
-  font:700 13px/1 'DM Sans',sans-serif;background:rgba(36,50,53,.07);color:var(--ink-2)}
-.optlabel{flex:1;font-size:17px;line-height:1.45}
-.qlead{font-size:15px;line-height:1.55;color:var(--ink-3);margin-top:16px}
+/* ── The preview: Web/index.html?preview in a device frame ────────────────── */
+.pv-bar{display:flex;align-items:center;gap:12px;margin:0 0 10px;min-height:34px;
+  padding-right:84px}                                 /* clear of Save */
+#pvNote{font-size:13px}
+#pvNote.warn{color:var(--danger)}
+.stage{display:flex;justify-content:center;align-items:flex-start;flex:none}
+#stageEmpty{margin-top:30vh}
+/* A real device, not a tall strip: its points are the iframe's CSS pixels,
+   so the page meets the same breakpoints it meets on that screen. */
+.device{width:calc(var(--pw,393px) + 20px);height:calc(var(--ph,852px) + 20px);flex:none;
+  border-radius:54px;border:10px solid #1c1c1e;background:#1c1c1e;overflow:hidden;
+  box-shadow:0 24px 60px rgba(36,50,53,.18);transform-origin:top center}
+.device iframe{display:block;width:var(--pw,393px);height:var(--ph,852px);border:0;
+  border-radius:44px;background:#FAFAFA}
+.device.flat{width:calc(var(--pw) + 2px);height:calc(var(--ph) + 2px);border-radius:12px;
+  border:1px solid var(--hair-2);background:#fff}
+.device.flat iframe{border-radius:11px}
 
-/* thread */
-.threadhead{font-size:16px;margin:26px 0 14px}
-.filters{display:flex;gap:8px;margin-bottom:22px}
-.fchip{padding:9px 15px;border-radius:999px;font-size:14.5px;font-weight:500;
-  background:var(--chip);min-width:42px;text-align:center}
-.fchip.on{background:var(--ink);color:var(--accent)}
-.resprow{display:flex;gap:12px;margin-bottom:32px}
-.avatar{flex:none;width:46px;height:46px;border-radius:50%;background:var(--parchment);
-  display:grid;place-items:center;font:500 18px/1 'DM Sans',sans-serif;color:#8A867E}
-.rbody{flex:1;min-width:0}
-.rname{font:700 16.5px/1.3 'DM Sans',sans-serif}
-.rkind{font:400 14px/1.3 'DM Sans',sans-serif;color:var(--ink-2);margin-left:8px}
-.rmeta{font-size:14px;color:var(--ink-2);margin-top:2px}
-.rpill{display:inline-block;margin:9px 0;padding:5px 11px;border-radius:12px;
-  font-size:13px;font-weight:500;line-height:1.35}
-.rclaim{font-size:17px;font-weight:500;line-height:1.6;margin-bottom:9px}
-.rdetail{font-size:16.5px;line-height:1.7;color:#5A5A5A}
-.rquote{background:var(--quote);border-radius:16px;padding:14px 16px;margin-top:10px}
-.rquote .qt{font:400 19px/1.6 Newsreader,Georgia,serif}
-.rquote .qs{font-size:13.5px;font-weight:500;color:var(--ink-2);margin-top:8px}
-.rquote .qs a{text-decoration:underline}
-.srclink{display:inline-block;margin-left:8px;padding:2px 9px;border-radius:999px;
-  background:var(--chip);color:var(--ink-3);font-size:12.5px;text-decoration:none;
-  white-space:nowrap;vertical-align:baseline}
-.srclink:hover{background:var(--hair-2)}
-.rreach{font:italic 400 15px/1.55 Newsreader,Georgia,serif;color:var(--ink-2);margin-top:9px}
-/* Nine comments look alike; say which one you just asked for. */
-.resprow{border-radius:16px;transition:background .2s}
-@keyframes flash{from{background:rgba(236,105,64,.18)} to{background:transparent}}
-.resprow.flash{animation:flash 1.6s ease-out}
-@media(prefers-reduced-motion:reduce){.resprow.flash{animation-duration:.01s}}
-
-/* editing affordances */
-[contenteditable]{outline:none;border-radius:6px}
-[contenteditable]:hover{box-shadow:0 0 0 2px rgba(36,50,53,.07)}
-[contenteditable]:focus{box-shadow:0 0 0 2px var(--A)}
-[contenteditable]:empty::before{content:attr(data-ph);color:var(--ink-2);opacity:.6}
-.blk{position:relative}
-.blk > .tools{position:absolute;top:-11px;right:-6px;display:none;gap:4px;z-index:3}
-.blk:hover > .tools{display:flex}
-.tools button{padding:3px 9px;font-size:12px;background:var(--ink);color:#fff;border-radius:999px}
-.tools button:hover{background:#31474B}
-.langtabs{display:flex;gap:2px;background:var(--chip);border-radius:999px;padding:3px}
+/* ── The side panel's fields ─────────────────────────────────────────────── */
+.label-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.label-row label{margin:0;flex:1}
+.label-row .tools{display:flex;gap:4px}
+.label-row .tools button{padding:2px 9px;font-size:12px}
+.inspect textarea{resize:none;overflow:hidden;padding:8px 10px;font-size:14.5px}
+.inspect input{padding:8px 10px;font-size:14.5px}
+.inspect select{padding:7px 10px;font-size:14px}
+textarea.serif{font-family:Newsreader,Georgia,serif;font-size:16px}
+textarea.serif.big{font-size:19px;line-height:1.3}
+.optedit{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px}
+.optedit .i-key{margin-top:7px}
+.optedit textarea{flex:1}
+.c-item{border:1px solid var(--hair);border-radius:12px;margin-bottom:6px;background:var(--surface)}
+.c-item[open]{border-color:var(--hair-2);box-shadow:0 2px 10px rgba(36,50,53,.06)}
+.c-item summary{display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;
+  list-style:none;font-size:14px}
+.c-item summary::-webkit-details-marker{display:none}
+.c-item summary .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.c-item .c-body{padding:4px 12px 12px;border-top:1px solid var(--hair)}
+.c-item .c-body .field{margin:10px 0 0}
+.c-item .c-body .badge{display:inline-block;margin-top:8px}
+.c-item .c-body .row{margin-top:12px}
+.langtabs{display:inline-flex;gap:2px;background:var(--chip);border-radius:999px;padding:3px}
 .langtabs button{padding:5px 13px;font-size:14px;background:transparent}
 .langtabs button.on{background:var(--ink);color:#fff}
-.respctl{display:flex;gap:6px;justify-content:flex-end;margin-top:6px}
-
-/* ── Matching the app, screen for screen ───────────────────────────────────
-   The app has two views of a question and they are not the same card, so the
-   preview has both. Later rules; they override the block above by cascade. */
-.phone{position:relative}
-.phone .scroll{padding-bottom:32px}                 /* Space.pageBottom */
-.phone.is-thread .scroll{padding-top:44px}          /* room the back pill floats over */
-
-.qcard.expanded{background:transparent;padding:20px;
-  box-shadow:inset 0 0 0 1px rgba(36,50,53,.16)}    /* hairlineCard */
-.qcard.expanded .qtitle{font-size:30px}             /* TextStyle.title */
-
-.backpill{position:absolute;top:86px;left:16px;z-index:2;padding:9px 15px;border-radius:999px;
-  background:rgba(255,255,255,.72);backdrop-filter:blur(12px);font-size:14.5px;font-weight:500;
-  box-shadow:0 1px 6px rgba(36,50,53,.10)}
-
-/* What a vote unlocks, on the feed card only. */
-.wideaction{margin-top:16px;padding:14px 16px;border-radius:999px;background:var(--ink);
-  color:var(--accent);text-align:center;font-size:16px;font-weight:500}
-
-/* Theme.Space.s between options, Radius.inner, hairlineStrong, 12/16 padding. */
-.opts{gap:8px}
-.optrow{gap:12px;padding:12px 16px;border-radius:16px}
-
-.rquote{padding:12px 16px}
-.rfoot{display:flex;align-items:center;gap:12px;margin-top:8px}
-.rorigin{flex:1;min-width:0;font-size:14px;color:var(--ink-2)}
-
-/* The app sits in a TabView; those 60pt are not the post's. */
-.tabbar{flex:none;height:60px;display:flex;border-top:1px solid var(--hair);
-  background:rgba(250,250,250,.92);backdrop-filter:blur(12px)}
-.tabbar .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:3px;color:#7C8B8E}
-.tabbar .tab.on{color:var(--ink)}
-.tabbar .ticon{font-size:17px;line-height:1}
-.tabbar .tlabel{font-size:11.5px;font-weight:500}

@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Newsreader:ital,wght@0,400;1,400&family=Merriweather&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=e1fbcaa1">
+<link rel="stylesheet" href="style.css?v=17a93bca">
 </head>
 <body>
 <!-- Save sits top right on every screen size, where people look for it. -->
@@ -24,7 +24,7 @@
     </div>
 
     <div class="field">
-      <label>Device</label>
+      <label>Preview on</label>
       <select id="device"></select>
     </div>
 
@@ -64,17 +64,24 @@
     </div>
   </aside>
 
-  <main class="main"><div class="stage" id="stage"></div></main>
+  <!-- Middle: the published web page itself (Web/index.html?preview), fed the
+       post you are editing. Not a copy of its styles: the page. -->
+  <main class="main">
+    <div class="pv-bar">
+      <div class="langtabs" id="viewTabs"></div>
+      <span class="muted" id="pvNote"></span>
+    </div>
+    <div class="stage" id="stage">
+      <div class="device" id="device-frame"><iframe id="preview" title="Preview — the post as readers see it"></iframe></div>
+    </div>
+    <p class="muted" id="stageEmpty">Select a post.</p>
+  </main>
 
-  <!-- Right: everything that edits the post itself. Nothing sits over the phone. -->
+  <!-- Right: everything that edits the post itself. Nothing sits over the preview. -->
   <aside class="inspect">
     <div class="inspect-head">Post</div>
     <div id="inspectEmpty" class="muted">Select a post on the left.</div>
     <div id="inspectBody" class="hide">
-      <div class="field">
-        <label>Preview</label>
-        <div class="langtabs" id="viewTabs"></div>
-      </div>
       <div class="field">
         <label>Identifier</label>
         <div class="mono" id="iId">—</div>
@@ -85,20 +92,18 @@
       </div>
 
       <div class="sep"></div>
+      <div id="iQuestion"></div>
+
+      <div class="sep"></div>
       <div class="field">
-        <label>Write with Claude</label>
-        <div class="row">
-          <button class="tiny" id="btnRewriteTitle">Rewrite title</button>
-          <button class="tiny" id="btnRewriteWhy">Rewrite setup</button>
-        </div>
-        <div class="row" style="margin-top:8px">
-          <button class="tiny primary" id="btnAddComments">+ comments</button>
-        </div>
+        <label>Options</label>
+        <div id="iOptions"></div>
       </div>
 
       <div class="sep"></div>
       <div class="field">
-        <label>Comments</label>
+        <div class="label-row"><label>Comments</label>
+          <button class="tiny primary" id="btnAddComments">+ comments</button></div>
         <div id="iResponses"></div>
       </div>
 
@@ -156,7 +161,8 @@
   </div>
 </div></div>
 
-<script src="prompts.js?v=e1fbcaa1"></script>
-<script src="app.js?v=e1fbcaa1"></script>
+<script src="build.js?v=17a93bca"></script>
+<script src="prompts.js?v=17a93bca"></script>
+<script src="app.js?v=17a93bca"></script>
 </body>
 </html>

@@ -15,12 +15,24 @@ Rules that outrank everything else:
    text, not a translation back from English.
 4. Never invent vote counts, participant numbers or percentages.
 5. Every voice votes FOR one option. There is no "against" — a thinker who
-   rejects option A holds B, C or D, and that is where they go.
+   rejects option A holds B or C, and that is where they go.
 6. One voice may appear only ONCE per question.
-7. "claim" is a modern-language paraphrase in the thinker's own stance, one or
-   two sentences, direct and non-academic. "detail" is two or three sentences
-   explaining the position and what it costs. Neither may be phrased as a quote.
-8. Spread the voices across all four options. Disagreement is the point.
+7. "claim" is written in the FIRST PERSON, as the thinker speaking: one or two
+   plain sentences restating what their own texts argue ("I argued that a child
+   should learn from things before books"). It must never speak to the modern
+   case as if they answered it ("about your phone, I'd say..."). "detail" is two
+   or three sentences in our own third-person voice: what the text was about,
+   that applying it here is our step, and the strongest objection to the
+   position or where it fails. Neither may be phrased as a quote.
+8. EXACTLY THREE options, A, B and C, and they must be truly different answers:
+   mutually exclusive choices about what to do or what is right, never a cause
+   vs an evaluation vs a mechanism. Test: could someone sensibly pick two at
+   once? If yes, rewrite them. Bad: "success comes from effort / we admire the
+   rich / it rests on others' labour" (all can be true at once). Good: "Should
+   luck change how much a person deserves? No / Yes, partly / Yes, entirely."
+9. Spread the voices across all three options, at least two on each.
+   Disagreement is the point. Prefer a surprise the texts truly support (Adam
+   Smith criticising the worship of the rich) over stereotyped casting.
 
 Voice "kind" must be one of: philosophy, religiousTeaching, evidence,
 speculation, contestedArgument.
@@ -29,11 +41,25 @@ Voice "type" must be one of: person, text, school, community, field.
 Reply with ONE fenced json block and nothing else.
 `.trim();
 
-function promptNewPost(existingVoices) {
-  return `${HOUSE_RULES}
+/* What the editors have liked so far: the "For the drafter" section of
+   Content/editor-feedback-summary.md (Docs/editor-role.md), which app.js reads
+   from the private repo at load. It never lives in this file, which is public.
+   A description of taste, ranked below the house rules. */
+function tasteNote(taste) {
+  if (!taste) return '';
+  return `
 
-Write ONE complete post: a provocative question about modern life, four
-substantively contrasting answers, and 6–8 responses from historical thinkers.
+What our editors have rated well and badly so far (1–5 stars per draft). Lean
+toward what scored well; never copy a past post, and never bend a rule above
+to chase a score:
+${taste}`;
+}
+
+function promptNewPost(existingVoices, taste) {
+  return `${HOUSE_RULES}${tasteNote(taste)}
+
+Write ONE complete post: a provocative question about modern life, exactly
+three mutually exclusive answers, and 6–8 responses from historical thinkers.
 
 Prefer these voices where they genuinely fit, so the library stays connected —
 but add new ones freely if the question calls for them:
@@ -50,8 +76,7 @@ Shape:
   "options": [
     {"key":"A","label":{"en":"...","zh":"..."}},
     {"key":"B","label":{"en":"...","zh":"..."}},
-    {"key":"C","label":{"en":"...","zh":"..."}},
-    {"key":"D","label":{"en":"...","zh":"..."}}
+    {"key":"C","label":{"en":"...","zh":"..."}}
   ],
   "works": [],
   "newVoices": [
@@ -94,8 +119,8 @@ something that reads as a quotation. Reply with only:
 \`\`\``;
 }
 
-function promptResponses(question, existingVoices, n) {
-  return `${HOUSE_RULES}
+function promptResponses(question, existingVoices, n, taste) {
+  return `${HOUSE_RULES}${tasteNote(taste)}
 
 Add ${n} more responses to an existing question. Do not repeat any voice
 already present, and put them where the spread is thinnest.

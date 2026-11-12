@@ -1,13 +1,18 @@
 /* Still editor.
    The repo is the database: this page reads and writes Content/source.json
-   through the GitHub API. Nothing else is hosted, and nothing calls an AI API. */
+   through the GitHub API. Nothing else is hosted, and nothing calls an AI API.
+
+   The middle of the page is not a drawing of the app: it is the published web
+   page (Web/index.html) opened as ?preview in an iframe, sent the post being
+   edited — any status — converted by build.js the way Content/build.py
+   converts a published one. What you see there is what readers will see. */
 
 const S = {
   src: null, qid: null, lang: 'en', dirty: false,
   gh: JSON.parse(localStorage.getItem('pl.gh') || 'null'),
   device: localStorage.getItem('pl.device') || 'std',
-  view: localStorage.getItem('pl.view') || 'thread',   // which of the app's two screens
-
+  view: localStorage.getItem('pl.view') === 'feed' ? 'feed' : 'thread',  // which screen the preview opens on
+  open: new Set(),          // comments expanded in the side panel, by voice
   sha: null,
 };
 const $ = (s) => document.querySelector(s);
@@ -15,32 +20,38 @@ const el = (t, c, h) => { const n = document.createElement(t); if (c) n.classNam
                           if (h !== undefined) n.innerHTML = h; return n; };
 const esc = (s) => (s ?? '').replace(/[<>&]/g, m => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[m]));
 const STATUSES = ['draft', 'published', 'hidden', 'archived'];
-const REVEAL_PAD = 16;   // breathing room above a comment scrolled into view
+const KEYS = ['A', 'B', 'C', 'D'];
+const MIN_OPTIONS = 3, MAX_OPTIONS = 3;   // every post has exactly three options (A–C)
 
-/// Points, not pixels — the same units the app lays out in.
+/// Points, not pixels — the same units the app lays out in. The desktop sizes
+/// are the web page's own breakpoints: the sidebar arrives at 900, the wide
+/// thread at 1180.
 const DEVICES = [
-  { id: 'se',      name: 'iPhone SE',        w: 375, h: 667 },
-  { id: 'mini',    name: 'iPhone 13 mini',   w: 375, h: 812 },
-  { id: 'std',     name: 'iPhone 16 / 17',   w: 393, h: 852 },
-  { id: 'plus',    name: 'iPhone 16 Plus',   w: 430, h: 932 },
-  { id: 'promax',  name: 'iPhone 17 Pro Max',w: 440, h: 956 },
+  { id: 'se',      name: 'iPhone SE',         w: 375,  h: 667 },
+  { id: 'std',     name: 'iPhone 16 / 17',    w: 393,  h: 852 },
+  { id: 'promax',  name: 'iPhone 17 Pro Max', w: 440,  h: 956 },
+  { id: 'tablet',  name: 'Tablet',            w: 820,  h: 1180, flat: true },
+  { id: 'laptop',  name: 'Laptop',            w: 1280, h: 800,  flat: true },
+  { id: 'desktop', name: 'Desktop',           w: 1440, h: 900,  flat: true },
 ];
-const device = () => DEVICES.find(d => d.id === S.device) || DEVICES[2];
+const device = () => DEVICES.find(d => d.id === S.device) || DEVICES[1];
 
-/// Scale the device down when the window is shorter than it is, so the whole
+/// Scale the device down to the room the middle column has, so the whole
 /// screen is always visible rather than clipped.
-function fitPhone() {
-  const phone = document.querySelector('.phone'), stage = $('#stage');
-  if (!phone || !stage) return;
-  const d = device(), frame = d.h + 20;                 // 10px bezel each side
-  const scale = Math.min(1, (window.innerHeight - 28) / frame);
-  phone.style.setProperty('--pw', d.w + 'px');
-  phone.style.setProperty('--ph', d.h + 'px');
-  phone.style.transform = `scale(${scale})`;
-  stage.style.height = Math.round(frame * scale) + 'px';
-  stage.style.width  = Math.round((d.w + 20) * scale) + 'px';
+function fitDevice() {
+  const frame = $('#device-frame'), stage = $('#stage'), main = $('.main');
+  const d = device(), bezel = d.flat ? 2 : 20;
+  frame.classList.toggle('flat', !!d.flat);
+  frame.style.setProperty('--pw', d.w + 'px');
+  frame.style.setProperty('--ph', d.h + 'px');
+  const roomW = main.clientWidth - 24, roomH = window.innerHeight - 70;
+  const narrow = window.innerWidth <= 900;
+  const scale = Math.min(1, roomW / (d.w + bezel), narrow ? 1 : roomH / (d.h + bezel));
+  frame.style.transform = `scale(${scale})`;
+  stage.style.height = Math.round((d.h + bezel) * scale) + 'px';
+  stage.style.width  = Math.round((d.w + bezel) * scale) + 'px';
 }
-window.addEventListener('resize', fitPhone);
+window.addEventListener('resize', fitDevice);
 
 function setStatus(msg, warn) {
   const n = $('#status');
@@ -50,12 +61,32 @@ function setStatus(msg, warn) {
   n.classList.remove('said');
   if (!warn) { void n.offsetWidth; n.classList.add('said'); setTimeout(() => n.classList.remove('said'), 2600); }
 }
-function markDirty() { S.dirty = true; $('#btnSave').classList.add('dirty'); setStatus('unsaved changes'); }
+function markDirty() {
+  if (!S.dirty) { S.dirty = true; $('#btnSave').classList.add('dirty'); setStatus('unsaved changes'); }
+  queuePreview();
+}
+function markClean() { S.dirty = false; $('#btnSave').classList.remove('dirty'); }
 
 /* ── GitHub ─────────────────────────────────────────────────────────────── */
 const api = (p, opt = {}) => fetch(`https://api.github.com/${p}`, {
   ...opt, headers: { Accept: 'application/vnd.github+json',
                      Authorization: `Bearer ${S.gh.token}`, ...(opt.headers || {}) } });
+// A path's slashes stay slashes: GitHub does not read %2F as a directory.
+const ghPath = (p) => p.split('/').map(encodeURIComponent).join('/');
+
+/// Base64 both ways, in UTF-8 and in slices: spreading 400 KB of bytes into
+/// String.fromCharCode overflows the call stack, which is how Save broke.
+function toBase64(text) {
+  const bytes = new TextEncoder().encode(text);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+const fromBase64 = (b64) => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, '')), c => c.charCodeAt(0)));
+
+/// source.json as build.py and the founder's hand edits write it — one-space
+/// indent, a closing newline — so a save changes only the lines that changed.
+const serialise = (src) => JSON.stringify(src, null, 1) + '\n';
 
 function showConnectError(text) {
   const n = $('#connectMsg');
@@ -65,10 +96,11 @@ function showConnectError(text) {
 
 async function ghLoad() {
   if (!S.gh) return false;
+  if (S.dirty && !confirm('Reloading drops your unsaved changes. Reload anyway?')) return false;
   setStatus('loading…');
   showConnectError('');
   const { repo, branch, path } = S.gh;
-  const r = await api(`repos/${repo}/contents/${encodeURIComponent(path)}?ref=${branch}`);
+  const r = await api(`repos/${repo}/contents/${ghPath(path)}?ref=${encodeURIComponent(branch)}`);
   if (!r.ok) {
     const why = {
       401: 'token rejected — it is wrong, expired, or was copied with a space',
@@ -82,18 +114,43 @@ async function ghLoad() {
     return false;
   }
   const j = await r.json();
+  // Over 1 MB the contents API leaves `content` empty; the blob carries it.
+  let b64 = j.content;
+  if (!b64 && j.sha) {
+    const b = await api(`repos/${repo}/git/blobs/${j.sha}`);
+    if (!b.ok) { setStatus(`GitHub ${b.status} reading the file`, true); return false; }
+    b64 = (await b.json()).content;
+  }
   S.sha = j.sha;
-  S.src = JSON.parse(new TextDecoder().decode(
-    Uint8Array.from(atob(j.content.replace(/\n/g, '')), c => c.charCodeAt(0))));
-  S.dirty = false; $('#btnSave').classList.remove('dirty');
+  try { S.src = JSON.parse(fromBase64(b64)); }
+  catch (e) { setStatus(`${path} is not valid JSON: ${e.message}`, true); return false; }
+  markClean();
+  loadTaste();
   $('#repoLine').textContent = `${repo} · ${branch}`;
-  renderList(); if (!S.qid) selectFirst();
+  opened();
   setStatus(`loaded ${S.src.questions.length} posts`);
   return true;
 }
 
+/// The editors' ratings, summarised (Tools/editor-feedback-summary.mjs), beside
+/// source.json in the private repo. Only its "For the drafter" section goes
+/// into the AI prompts. Best effort: no file, no section, no change.
+async function loadTaste() {
+  S.taste = '';
+  try {
+    const { repo, branch, path } = S.gh;
+    const p = path.replace(/[^/]*$/, '') + 'editor-feedback-summary.md';
+    const r = await api(`repos/${repo}/contents/${ghPath(p)}?ref=${encodeURIComponent(branch)}`);
+    if (!r.ok) return;
+    const md = fromBase64((await r.json()).content || '');
+    const m = /## For the drafter\n([\s\S]*?)(?=\n## |$)/.exec(md);
+    S.taste = m ? m[1].trim() : '';
+  } catch (e) { S.taste = ''; }
+}
+
 async function ghSave() {
-  if (!S.gh) return setStatus('not connected', true);
+  if (!S.src) return setStatus('nothing loaded', true);
+  if (!S.gh || !S.sha) return setStatus('opened from a file — use Download to keep your changes', true);
   const problems = check();
   if (problems.length) {
     if (!confirm(`${problems.length} problem(s) found:\n\n${problems.slice(0,8).join('\n')}\n\nSave anyway?`)) return;
@@ -102,13 +159,19 @@ async function ghSave() {
   const body = {
     message: `content: ${S.qid || 'edit'}`,
     branch: S.gh.branch, sha: S.sha,
-    content: btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(S.src, null, 1)))),
+    content: toBase64(serialise(S.src)),
   };
-  const r = await api(`repos/${S.gh.repo}/contents/${encodeURIComponent(S.gh.path)}`,
-                      { method: 'PUT', body: JSON.stringify(body) });
+  let r;
+  try {
+    r = await api(`repos/${S.gh.repo}/contents/${ghPath(S.gh.path)}`,
+                  { method: 'PUT', body: JSON.stringify(body) });
+  } catch (e) { return setStatus(`save failed: ${e.message}`, true); }
+  if (r.status === 409 || r.status === 422)
+    return setStatus(`save refused (${r.status}): source.json changed on GitHub since you loaded it. ` +
+                     `Download your copy, then Reload.`, true);
   if (!r.ok) return setStatus(`save failed: ${r.status} ${(await r.text()).slice(0,120)}`, true);
   S.sha = (await r.json()).content.sha;
-  S.dirty = false; $('#btnSave').classList.remove('dirty');
+  markClean();
   setStatus('saved to GitHub');
 }
 
@@ -122,7 +185,9 @@ function check() {
     if (ids.has(q.id)) at('duplicate id'); ids.add(q.id);
     if (!STATUSES.includes(q.status)) at(`bad status "${q.status}"`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(q.date || '')) at('bad date');
-    if (q.options.length !== 4) at('needs exactly 4 options');
+    if (q.options.length < MIN_OPTIONS || q.options.length > MAX_OPTIONS) at(`needs ${MIN_OPTIONS} or ${MAX_OPTIONS} options`);
+    q.options.forEach((o, i) => { if (o.key !== KEYS[i]) at(`option ${i + 1} should be ${KEYS[i]}`);
+                                  if (!o.label?.en?.trim()) at(`option ${o.key} has no label`); });
     if (q.baselinePct || q.joined) at('has invented vote data');
     const seen = new Set();
     for (const r of q.responses) {
@@ -140,10 +205,14 @@ function check() {
 }
 
 /* ── Sidebar ────────────────────────────────────────────────────────────── */
+const listed = () => {
+  const f = $('#filter').value;
+  return S.src.questions.filter(q => f === 'all' || q.status === f)
+                        .sort((a, b) => b.date.localeCompare(a.date));
+};
 function renderList() {
-  const f = $('#filter').value, list = $('#list'); list.innerHTML = '';
-  const qs = S.src.questions.filter(q => f === 'all' || q.status === f)
-                            .sort((a, b) => b.date.localeCompare(a.date));
+  const list = $('#list'); list.innerHTML = '';
+  const qs = listed();
   const tally = {};
   for (const q of S.src.questions) tally[q.status] = (tally[q.status] || 0) + 1;
   const sum = el('div', 'muted');
@@ -154,9 +223,9 @@ function renderList() {
   if (!qs.length) list.appendChild(el('p', 'muted', 'Nothing here.'));
   for (const q of qs) {
     const b = el('button', 'q-item' + (q.id === S.qid ? ' sel' : ''));
-    b.innerHTML = `<span class="dot s-${q.status}"></span>${esc(q.title.en.slice(0, 62))}` +
-                  `<div class="muted">${q.date} · ${q.responses.length} comments</div>`;
-    b.onclick = () => { S.qid = q.id; renderList(); renderPost(); };
+    b.innerHTML = `<span class="dot s-${q.status}"></span>${esc((q.title.en || '(untitled)').slice(0, 62))}` +
+                  `<div class="muted">${q.date} · ${q.status} · ${q.responses.length} comments</div>`;
+    b.onclick = () => select(q.id);
     list.appendChild(b);
     const quick = el('div', 'row');
     quick.style.cssText = 'margin:-2px 0 8px 12px';
@@ -171,113 +240,31 @@ function renderList() {
     list.appendChild(quick);
   }
 }
-const selectFirst = () => { const q = S.src.questions[0]; if (q) { S.qid = q.id; renderList(); renderPost(); } };
+function select(id) { S.qid = id; S.open.clear(); renderList(); renderPost(); }
+/// After a load: keep the post you were on if it is still there, otherwise the
+/// newest one in the list.
+function opened() {
+  if (!S.src.questions.some(q => q.id === S.qid)) S.qid = (listed()[0] || S.src.questions[0])?.id || null;
+  S.open.clear(); renderList(); renderPost();
+}
 const current = () => S.src?.questions.find(q => q.id === S.qid);
 
-/* ── Editable helpers ───────────────────────────────────────────────────── */
-// Binds a node to obj[key][lang]; writes back on blur.
-function bind(node, obj, key, ph) {
-  node.contentEditable = 'true';
-  node.dataset.ph = ph || '';
-  node.textContent = (obj[key]?.[S.lang]) ?? '';
-  node.addEventListener('blur', () => {
-    const v = node.textContent.trim();
-    obj[key] = obj[key] || { en: '', zh: '' };
-    if (obj[key][S.lang] !== v) { obj[key][S.lang] = v; markDirty(); }
-  });
-  return node;
-}
-function tools(node, buttons) {
-  const bar = el('div', 'tools');
-  for (const [label, fn] of buttons) { const b = el('button', '', label); b.onclick = fn; bar.appendChild(b); }
-  node.classList.add('blk'); node.appendChild(bar); return node;
-}
-
-/* ── The post, drawn the way the app draws it ───────────────────────────── */
+/* ── The post: preview in the middle, its fields on the right ───────────── */
 function renderPost() {
-  const q = current(); const stage = $('#stage'); stage.innerHTML = '';
-  const ctl = $('#postCtl');
-  if (!q) {
-    ctl.classList.add('hide');
-    $('#inspectBody').classList.add('hide'); $('#inspectEmpty').classList.remove('hide');
-    stage.innerHTML = '<p class="muted">Select a post.</p>'; return;
-  }
-  ctl.classList.remove('hide');
+  const q = current();
+  const has = !!q;
+  $('#postCtl').classList.toggle('hide', !has);
+  $('#inspectBody').classList.toggle('hide', !has);
+  $('#inspectEmpty').classList.toggle('hide', has);
+  $('#stage').classList.toggle('hide', !has);
+  $('.pv-bar').classList.toggle('hide', !has);
+  $('#stageEmpty').classList.toggle('hide', has);
+  if (!q) return;
   renderPostControls(q);
+  renderViewTabs();
   renderInspector(q);
-
-  const thread = S.view === 'thread';
-  const phone = el('div', 'phone' + (thread ? ' is-thread' : ' is-feed'));
-  phone.innerHTML = `<div class="statusbar"><span>9:41</span><span>▲ ᯤ ▮</span></div>
-                     <div class="wordmark">Still</div>` +
-    // ThreadView floats a back pill over the content; the feed has none.
-    (thread ? `<div class="backpill">${S.lang === 'zh' ? '← 返回信息流' : '← Back to the feed'}</div>` : '');
-  const scroll = el('div', 'scroll');
-
-  // ── question card. In the feed it is a white card with the display title;
-  // in the thread the same card is transparent, outlined, and one size down.
-  const card = el('div', 'qcard' + (thread ? ' expanded' : ''));
-  const head = el('div', 'qhead');
-  head.appendChild(el('div', 'qdate', dateLabel(q.date)));
-  head.appendChild(el('div', 'qicons', '♡ &nbsp; ⚑'));
-  card.appendChild(head);
-
-  card.appendChild(tools(bind(el('h1', 'qtitle'), q, 'title', 'Question title'),
-    [['rewrite', () => openAI('field', q, { key: 'title', label: 'question title' })]]));
-  card.appendChild(tools(bind(el('div', 'qwhy'), q, 'why', 'What makes this live right now'),
-    [['rewrite', () => openAI('field', q, { key: 'why', label: 'question setup' })],
-     ['shorter', () => openAI('field', q, { key: 'why', label: 'question setup', how: 'Make it shorter and sharper.' })],
-     ['longer',  () => openAI('field', q, { key: 'why', label: 'question setup', how: 'Give it one more sentence of grounding.' })]]));
-
-  const opts = el('div', 'opts');
-  for (const o of q.options) {
-    const row = el('div', 'optrow');
-    // Unanswered is the state a reader meets: neutral outline, grey key. The
-    // option's colour arrives with a vote, and in the comment pills below.
-    row.appendChild(el('div', 'optdot', o.key));
-    row.appendChild(bind(el('div', 'optlabel'), o, 'label', `Answer ${o.key}`));
-    opts.appendChild(row);
-  }
-  card.appendChild(opts);
-  card.appendChild(el('div', 'qlead', S.src.strings[S.lang].lead));
-  scroll.appendChild(card);
-
-  if (!thread) {                       // the feed's own footer: what a vote unlocks
-    scroll.appendChild(el('div', 'wideaction', S.lang === 'zh' ? '打开讨论' : 'Open the thread'));
-    phone.appendChild(scroll);
-    phone.appendChild(tabBar());
-    stage.appendChild(phone);
-    fitPhone();
-    return;
-  }
-
-  // ── thread
-  scroll.appendChild(el('div', 'threadhead', S.lang === 'zh' ? '讨论 · 按影响力排序' : 'Comments from the past lives'));
-  const chips = el('div', 'filters');
-  chips.appendChild(el('div', 'fchip on', S.lang === 'zh' ? '全部' : 'All'));
-  for (const o of q.options) chips.appendChild(el('div', 'fchip', o.key));
-  scroll.appendChild(chips);
-
-  for (const r of threadOrder(q)) scroll.appendChild(renderResponse(q, r));
-
-  phone.appendChild(scroll);
-  phone.appendChild(tabBar());
-  stage.appendChild(phone);
-  fitPhone();
-}
-
-/// The app sits in a TabView; the preview is a lie without it, and the tab bar
-/// is 60pt of the screen the post does not get.
-function tabBar() {
-  const nav = el('div', 'tabbar');
-  const items = S.lang === 'zh' ? ['首页', '浏览', '我'] : ['Home', 'Explore', 'Me'];
-  const icons = ['\u2302', '\u25a6', '\u25cb'];
-  items.forEach((label, i) => {
-    const t = el('div', 'tab' + (i === 0 ? ' on' : ''));
-    t.innerHTML = `<div class="ticon">${icons[i]}</div><div class="tlabel">${label}</div>`;
-    nav.appendChild(t);
-  });
-  return nav;
+  ensurePreview();
+  sendPreview();
 }
 
 /// Left panel: where you are — language, status, date. The post's coordinates,
@@ -293,200 +280,244 @@ function renderPostControls(q) {
   st.onchange = () => { q.status = st.value; markDirty(); renderList(); };
 
   const d = $('#pDate'); d.value = q.date;
-  d.onchange = () => { q.date = d.value; markDirty(); renderList(); };
+  d.onchange = () => { if (!d.value) return; q.date = d.value; markDirty(); renderList(); };
+}
 
+/// The web page has two screens for a question, and they are not the same card.
+function renderViewTabs() {
+  const vt = $('#viewTabs'); vt.innerHTML = '';
+  for (const [id, label] of [['thread', 'Thread'], ['feed', 'Feed']]) {
+    const b = el('button', S.view === id ? 'on' : '', label);
+    b.onclick = () => { S.view = id; localStorage.setItem('pl.view', id); renderViewTabs(); sendPreview(); };
+    vt.appendChild(b);
+  }
+}
+
+/* ── Fields ─────────────────────────────────────────────────────────────── */
+/// A text box bound to obj[key][lang] (or obj[key] when `plain`), written on
+/// every keystroke so the preview follows the typing.
+function textBox(obj, key, { rows = 1, ph = '', plain = false, cls = '' } = {}) {
+  const n = rows > 1 ? el('textarea', cls) : el('input', cls);
+  if (rows > 1) n.rows = rows;
+  n.placeholder = ph;
+  n.value = plain ? (obj[key] ?? '') : (obj[key]?.[S.lang] ?? '');
+  n.addEventListener('input', () => {
+    if (plain) obj[key] = n.value.trim();
+    else { obj[key] = obj[key] || { en: '', zh: '' }; obj[key][S.lang] = n.value; }
+    markDirty();
+  });
+  // Stray spaces never reach the file; they are kept only while typing.
+  if (!plain) n.addEventListener('change', () => {
+    const v = n.value.trim();
+    if (v !== n.value) { n.value = v; obj[key][S.lang] = v; markDirty(); }
+  });
+  if (rows > 1) { const fit = () => { n.style.height = 'auto'; n.style.height = n.scrollHeight + 2 + 'px'; };
+                  n.addEventListener('input', fit); requestAnimationFrame(fit); }
+  return n;
+}
+/// A labelled field with its Claude buttons beside the label.
+function field(label, input, tools = []) {
+  const f = el('div', 'field');
+  const head = el('div', 'label-row');
+  head.appendChild(el('label', '', esc(label)));
+  if (tools.length) {
+    const t = el('div', 'tools');
+    for (const [name, fn] of tools) t.appendChild(btn(name, fn));
+    head.appendChild(t);
+  }
+  f.appendChild(head); f.appendChild(input);
+  return f;
 }
 
 /// Right panel: what you are editing. Everything that changes the post itself
-/// lives here, so nothing overlaps the device.
+/// lives here, so nothing overlaps the preview.
 function renderInspector(q) {
-  $('#inspectEmpty').classList.add('hide');
-  $('#inspectBody').classList.remove('hide');
   $('#iId').textContent = q.id;
+  renderShape(q);
 
-  // The app has two screens for a question, and they are not the same card.
-  const vt = $('#viewTabs'); vt.innerHTML = '';
-  for (const [id, label] of [['feed', 'Feed'], ['thread', 'Thread']]) {
-    const b = el('button', S.view === id ? 'on' : '', label);
-    b.onclick = () => { S.view = id; localStorage.setItem('pl.view', id); renderPost(); };
-    vt.appendChild(b);
-  }
+  const qa = $('#iQuestion'); qa.innerHTML = '';
+  qa.appendChild(field('Title', textBox(q, 'title', { rows: 2, ph: 'Question title', cls: 'serif big' }),
+    [['rewrite', () => openAI('field', q, { key: 'title', label: 'question title' })]]));
+  qa.appendChild(field('Setup', textBox(q, 'why', { rows: 4, ph: 'What makes this live right now' }),
+    [['rewrite', () => openAI('field', q, { key: 'why', label: 'question setup' })],
+     ['shorter', () => openAI('field', q, { key: 'why', label: 'question setup', how: 'Make it shorter and sharper.' })],
+     ['longer',  () => openAI('field', q, { key: 'why', label: 'question setup', how: 'Give it one more sentence of grounding.' })]]));
 
-  const spread = new Set(q.responses.map(r => r.option));
-  $('#iShape').textContent =
-    `${q.options.length} options · ${q.responses.length} comments · ` +
-    (spread.size < 2 ? 'no disagreement' : `${spread.size} sides taken`);
+  renderOptions(q);
+  renderResponses(q);
 
-  const list = $('#iResponses'); list.innerHTML = '';
-  if (!q.responses.length) list.appendChild(el('p', 'muted', 'No comments yet.'));
-  for (const r of threadOrder(q)) {
-    const v = S.src.voices.find(x => x.id === r.voice);
-    const st = S.src.optionStyle[r.option] || {};
-    const row = el('div', 'i-resp');
-    const key = el('div', 'i-key', r.option);
-    key.style.background = st.fill; key.style.color = st.ink;
-    key.title = 'click to move this voice to another option';
-    key.onclick = (e) => { e.stopPropagation(); cycleOption(q, r); };
-    row.appendChild(key);
-    row.appendChild(el('div', 'nm', esc(v?.name?.[S.lang] || v?.name?.en || r.voice)));
-    const rm = btn('Remove', (e) => {
-      e.stopPropagation();
-      q.responses = q.responses.filter(x => x !== r); markDirty(); renderPost();
-    }, 'danger');
-    row.appendChild(rm);
-    row.title = 'scroll the phone to this comment';
-    row.onclick = () => reveal(r.voice);
-    list.appendChild(row);
-  }
-
-  $('#btnRewriteTitle').onclick = () => openAI('field', q, { key: 'title', label: 'question title' });
-  $('#btnRewriteWhy').onclick = () => openAI('field', q, { key: 'why', label: 'question setup' });
   $('#btnAddComments').onclick = () => openAI('responses', q);
   $('#btnDelete').onclick = () => {
-    if (!confirm(`Delete "${q.title.en}"? This cannot be undone from here.`)) return;
+    if (!confirm(`Delete "${q.title.en}"? This cannot be undone from here.\n\n` +
+                 `To take a post down, set its status to hidden or archived instead — old votes reference its id.`)) return;
     S.src.questions = S.src.questions.filter(x => x !== q);
     S.qid = null; markDirty(); renderList(); renderPost();
   };
 }
 
-const threadOrder = (q) => [...q.responses].sort((a, b) => score(b) - score(a));
-
-function renderResponse(q, r) {
-  const v = S.src.voices.find(x => x.id === r.voice) || { name: { en: r.voice, zh: r.voice }, origin: {} };
-  const st = S.src.optionStyle[r.option];
-  const opt = q.options.find(o => o.key === r.option);
-  const row = el('div', 'resprow');
-  row.dataset.voice = r.voice;
-  row.appendChild(el('div', 'avatar', avatarInitial(v.name[S.lang] || v.name.en)));
-
-  const body = el('div', 'rbody');
-  body.appendChild(el('div', 'rname',
-    `${esc(v.name[S.lang] || v.name.en)} <span class="rkind">${esc(kindLabel(v.kind))}</span>`));
-
-  // which option this voice holds — editable, and the whole disagreement model
-  const pill = el('div', 'rpill', `${S.lang === 'zh' ? '投给 ' : 'Voted for '}${r.option} · ${esc(opt?.label[S.lang] || '')}`);
-  pill.style.background = st.bg; pill.style.color = st.text; pill.style.cursor = 'pointer';
-  pill.title = 'click to move this voice to another option';
-  pill.onclick = () => cycleOption(q, r);
-  body.appendChild(pill);
-
-  // quote — required, and the source line is what makes it a quote
-  r.quote = r.quote || { text: { en: '', zh: '' }, source: { en: '', zh: '' }, url: '', verified: false };
-  const qb = el('div', 'rquote');
-  qb.appendChild(bind(el('div', 'qt'), r.quote, 'text', 'Verbatim quote — never paraphrase here'));
-  const srcLine = el('div', 'qs');
-  srcLine.appendChild(document.createTextNode('\u2014 '));
-  const srcEd = bind(el('span'), r.quote, 'source', 'Author, Work I.2, trans. Name');
-  srcEd.style.textDecoration = 'underline';
-  srcLine.appendChild(srcEd);
-  qb.appendChild(srcLine);
-  // The link is for reading, not editing — the same bargain the app makes:
-  // the source line is what you click, not a URL field to keep in order.
-  if (r.quote.url) srcLine.appendChild(sourceLink(r.quote.url));
-  if (!r.quote.text?.en?.trim()) qb.appendChild(el('div', 'badge warn', 'no quote — this will not pass the check'));
-  else qb.appendChild(el('div', 'badge' + (r.quote.verified ? ' ok' : ''),
-        r.quote.verified ? 'verified against source' : 'not yet verified'));
-  body.appendChild(qb);
-
-  body.appendChild(tools(bind(el('div', 'rclaim'), r, 'claim', 'One-line summary of the position'),
-    [['rewrite', () => openAI('field', q, { key: 'claim', label: `${v.name.en}'s claim`, obj: r })],
-     ['shorter', () => openAI('field', q, { key: 'claim', label: `${v.name.en}'s claim`, obj: r, how: 'Make it shorter and blunter.' })]]));
-  body.appendChild(tools(bind(el('div', 'rdetail'), r, 'detail', 'Explain the quote, sum up the voice, tie it to the question'),
-    [['rewrite', () => openAI('field', q, { key: 'detail', label: `${v.name.en}'s detail`, obj: r })],
-     ['longer',  () => openAI('field', q, { key: 'detail', label: `${v.name.en}'s detail`, obj: r, how: 'Add one more sentence of substance.' })]]));
-
-  if (v.reach?.note) body.appendChild(el('div', 'rreach', esc(v.reach.note[S.lang] || v.reach.note.en)));
-
-  // ResponseRow closes with where the voice comes from; the editor's own
-  // action sits where the app puts like / share / report.
-  const foot = el('div', 'rfoot');
-  foot.appendChild(el('div', 'rorigin', esc(v.origin?.[S.lang] || v.origin?.en || '')));
-  foot.appendChild(btn('Remove', () => {
-    q.responses = q.responses.filter(x => x !== r); markDirty(); renderPost();
-  }, 'danger'));
-  body.appendChild(foot);
-
-  row.appendChild(body);
-  return row;
+function renderShape(q) {
+  const spread = new Set(q.responses.map(r => r.option));
+  $('#iShape').textContent =
+    `${q.status} · ${q.options.length} options · ${q.responses.length} comments · ` +
+    (spread.size < 2 ? 'no disagreement' : `${spread.size} sides taken`);
 }
 
-/// Titles arrive wrapped in punctuation; a bracket is not a monogram.
-const avatarInitial = (s) => (String(s || '').match(/[\p{L}\p{N}]/u) || ['?'])[0];
+const keyChip = (key) => {
+  const st = S.src.optionStyle[key] || {};
+  const k = el('span', 'i-key', key);
+  k.style.background = st.fill || ''; k.style.color = st.ink || '';
+  return k;
+};
 
-/// Move a voice to the next option. The chip in the thread and the chip in the
-/// inspector are the same act, so they are the same function.
+function renderOptions(q) {
+  const box = $('#iOptions'); box.innerHTML = '';
+  q.options.forEach((o, i) => {
+    const row = el('div', 'optedit');
+    row.appendChild(keyChip(o.key));
+    row.appendChild(textBox(o, 'label', { rows: 2, ph: `Answer ${o.key}` }));
+    // Only the last option comes off, and only when nobody holds it, so keys
+    // stay A, B, C in order and no voice is left pointing at nothing.
+    const last = i === q.options.length - 1;
+    if (last && q.options.length > MIN_OPTIONS) {
+      const held = q.responses.filter(r => r.option === o.key).length;
+      const x = btn('Remove', () => {
+        if (held) return setStatus(`${held} voice(s) hold ${o.key} — move them first`, true);
+        q.options.pop(); markDirty(); renderPost();
+      }, 'danger');
+      x.title = held ? `${held} voice(s) hold ${o.key}` : `remove option ${o.key}`;
+      row.appendChild(x);
+    }
+    box.appendChild(row);
+  });
+  if (q.options.length < MAX_OPTIONS) {
+    const key = KEYS[q.options.length];
+    box.appendChild(btn(`+ option ${key}`, () => {
+      q.options.push({ key, label: { en: '', zh: '' } }); markDirty(); renderPost();
+    }));
+  }
+}
+
+/// The order the web page shows replies in: furthest reach first, otherwise
+/// as written (Web/index.html threadRows).
+const weight = (vid) => S.src.voices.find(v => v.id === vid)?.reach?.weight ?? 0;
+const threadOrder = (q) => q.responses.map((r, i) => ({ r, i }))
+  .sort((a, b) => weight(b.r.voice) - weight(a.r.voice) || a.i - b.i).map(x => x.r);
+
+function renderResponses(q) {
+  const list = $('#iResponses'); list.innerHTML = '';
+  if (!q.responses.length) list.appendChild(el('p', 'muted', 'No comments yet.'));
+  for (const r of threadOrder(q)) {
+    const v = S.src.voices.find(x => x.id === r.voice);
+    const item = el('details', 'c-item');
+    item.open = S.open.has(r.voice);
+    const sum = el('summary');
+    const key = keyChip(r.option);
+    key.title = 'move this voice to the next option';
+    key.onclick = (e) => { e.preventDefault(); e.stopPropagation(); cycleOption(q, r); };
+    sum.appendChild(key);
+    sum.appendChild(el('span', 'nm', esc(v?.name?.[S.lang] || v?.name?.en || r.voice)));
+    if (!r.quote?.text?.en?.trim() || !r.quote?.source?.en?.trim()) sum.appendChild(el('span', 'badge warn', 'no quote'));
+    item.appendChild(sum);
+    item.addEventListener('toggle', () => {
+      if (item.open) { S.open.add(r.voice); focusPreview(q, r); } else S.open.delete(r.voice);
+    });
+
+    const body = el('div', 'c-body');
+    // Which option this voice holds: the whole disagreement model.
+    const sel = el('select');
+    for (const o of q.options) {
+      const op = el('option', '', `${o.key} · ${esc(o.label?.[S.lang] || o.label?.en || '')}`);
+      op.value = o.key; if (o.key === r.option) op.selected = true; sel.appendChild(op);
+    }
+    sel.onchange = () => { r.option = sel.value; markDirty(); renderPost(); };
+    body.appendChild(field('Voted for', sel));
+
+    // The quote is required, and the source line is what makes it a quote.
+    r.quote = r.quote || { text: { en: '', zh: '' }, source: { en: '', zh: '' }, url: '', verified: false };
+    body.appendChild(field('Quote — verbatim, never paraphrased',
+      textBox(r.quote, 'text', { rows: 3, ph: 'Verbatim quote', cls: 'serif' })));
+    body.appendChild(field('Source', textBox(r.quote, 'source', { ph: 'Author, Work I.2, trans. Name' })));
+    const url = textBox(r.quote, 'url', { ph: 'https://…', plain: true });
+    body.appendChild(field('Source link', url));
+    body.appendChild(el('div', 'badge' + (r.quote.verified ? ' ok' : ''),
+      r.quote.verified ? 'verified against source' : 'not yet verified'));
+
+    const name = v?.name?.en || r.voice;
+    body.appendChild(field('Claim', textBox(r, 'claim', { rows: 2, ph: 'One-line summary of the position' }),
+      [['rewrite', () => openAI('field', q, { key: 'claim', label: `${name}'s claim`, obj: r })],
+       ['shorter', () => openAI('field', q, { key: 'claim', label: `${name}'s claim`, obj: r, how: 'Make it shorter and blunter.' })]]));
+    body.appendChild(field('Detail', textBox(r, 'detail', { rows: 4, ph: 'Explain the quote, sum up the voice, tie it to the question' }),
+      [['rewrite', () => openAI('field', q, { key: 'detail', label: `${name}'s detail`, obj: r })],
+       ['longer',  () => openAI('field', q, { key: 'detail', label: `${name}'s detail`, obj: r, how: 'Add one more sentence of substance.' })]]));
+
+    const foot = el('div', 'row');
+    foot.appendChild(btn('Remove comment', () => {
+      if (!confirm(`Remove ${name} from this post?`)) return;
+      q.responses = q.responses.filter(x => x !== r); markDirty(); renderPost();
+    }, 'danger'));
+    body.appendChild(foot);
+    item.appendChild(body);
+    list.appendChild(item);
+  }
+}
+
+/// Move a voice to the next option.
 function cycleOption(q, r) {
   const keys = q.options.map(o => o.key);
   r.option = keys[(keys.indexOf(r.option) + 1) % keys.length];
   markDirty(); renderPost();
-  reveal(r.voice, false);
-}
-
-/// Animated by hand: scroll-behavior:smooth does nothing inside the phone's
-/// transform-scaled frame in some browsers, and a jump loses your place.
-function glide(box, to, ms = 420) {
-  const from = box.scrollTop, d = to - from;
-  const token = (box._glide = (box._glide || 0) + 1);
-  if (!d) return;
-  // A hidden tab gets no animation frames; a background render must still land.
-  if (document.hidden || matchMedia('(prefers-reduced-motion: reduce)').matches) { box.scrollTop = to; return; }
-  const t0 = performance.now();
-  const step = (t) => {
-    if (box._glide !== token) return;                  // a newer click won
-    const p = Math.min(1, (t - t0) / ms);
-    const e = p < .5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
-    box.scrollTop = from + d * e;
-    if (p < 1) requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
-
-/// Scroll the phone — not the page — to a comment, and mark it so the eye can
-/// find it among nine others.
-function reveal(voice, flash = true) {
-  const scroll = document.querySelector('.phone .scroll');
-  const node = scroll?.querySelector(`.resprow[data-voice="${CSS.escape(voice)}"]`);
-  if (!node) return;
-  glide(scroll, Math.max(0, node.offsetTop - REVEAL_PAD));
-  if (!flash) return;
-  node.classList.remove('flash');
-  void node.offsetWidth;                 // restart the animation on a re-click
-  node.classList.add('flash');
-}
-/// A chip that opens the source in a new tab, labelled by where it goes rather
-/// than by the whole URL.
-function sourceLink(href) {
-  const a = el('a', 'srclink');
-  a.href = href; a.target = '_blank'; a.rel = 'noopener noreferrer';
-  let host = href;
-  try { host = new URL(href).hostname.replace(/^www\./, ''); } catch (e) {}
-  a.textContent = host + ' \u2197';
-  a.title = href;
-  a.onclick = (e) => e.stopPropagation();
-  return a;
-}
-
-const weight = (vid) => S.src.voices.find(v => v.id === vid)?.reach?.weight ?? 0;
-/// ContentStore.ThreadRow.score, ported exactly. Reach first, then a stable
-/// hash — without the tiebreak, voices of equal weight sort differently here
-/// than they do on the phone.
-function stableHash(str) {
-  let h = 0;
-  for (const ch of str) h = (h * 31 + ch.codePointAt(0)) % 100000;
-  return h;
-}
-function score(r) {
-  const v = S.src.voices.find(x => x.id === r.voice);
-  return weight(r.voice) * 1000 + stableHash((v?.name?.en || '') + '|' + (r.claim?.en || '')) % 900;
-}
-const kindLabel = (k) => S.src.kinds[k]?.[S.lang] || k || '';
-function dateLabel(iso) {
-  const d = new Date(iso + 'T00:00:00Z');
-  return S.lang === 'zh'
-    ? `${d.getUTCMonth() + 1}月${d.getUTCDate()}日`
-    : d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
 }
 function btn(label, fn, cls) { const b = el('button', (cls || '') + ' tiny', label); b.onclick = fn; return b; }
+
+/* ── Preview: the web page itself ───────────────────────────────────────── */
+/// Where the published page lives. Next to the editor on GitHub Pages (same
+/// origin, qingyimakes.github.io); in this repo, Web/ beside Editor/ — serve
+/// the repo root (the still-editor launch entry does).
+function previewSrc() {
+  if (location.hostname.endsWith('github.io')) return 'https://qingyimakes.github.io/still/?preview';
+  return new URL('../Web/index.html?preview', location.href).href;
+}
+const PV = { ready: false, timer: 0, waited: 0 };
+function ensurePreview() {
+  const f = $('#preview');
+  if (f.dataset.src) return;
+  f.dataset.src = previewSrc();
+  PV.ready = false;
+  f.src = f.dataset.src;
+  fitDevice();
+  // A page without ?preview (the live site before this change is published)
+  // loads as itself and never answers. Say so instead of showing it as yours.
+  clearTimeout(PV.waited);
+  PV.waited = setTimeout(() => {
+    if (!PV.ready) $('#pvNote').textContent = 'The web page did not answer — it needs the ?preview mode published.';
+  }, 6000);
+}
+window.addEventListener('message', (ev) => {
+  const f = $('#preview');
+  if (ev.source !== f.contentWindow || ev.data?.type !== 'still-preview-ready') return;
+  PV.ready = true; $('#pvNote').textContent = '';
+  sendPreview();
+});
+function queuePreview() { clearTimeout(PV.timer); PV.timer = setTimeout(sendPreview, 180); }
+function sendPreview() {
+  clearTimeout(PV.timer);
+  const q = current();
+  if (!q || !PV.ready) return;
+  const { content, problems } = buildContent(S.src, q.id);
+  const mine = problems.filter(p => p.startsWith(q.id + ':'));
+  $('#pvNote').textContent = mine.length ? `not shown: ${mine.slice(0, 2).join(' · ')}` : '';
+  $('#pvNote').classList.toggle('warn', mine.length > 0);
+  const f = $('#preview');
+  f.contentWindow.postMessage({ type: 'still-preview', content, open: q.id, view: S.view, lang: S.lang },
+                              new URL(f.dataset.src).origin);
+}
+/// Scroll the preview to a comment opened in the side panel.
+function focusPreview(q, r) {
+  const f = $('#preview');
+  if (!PV.ready || S.view !== 'thread') return;
+  f.contentWindow.postMessage({ type: 'still-preview-focus', response: responseId(q, r) },
+                              new URL(f.dataset.src).origin);
+}
 
 /* ── AI: prompt out, JSON back. Nothing is called. ──────────────────────── */
 let aiMode = null, aiCtx = null;
@@ -494,8 +525,8 @@ function openAI(mode, q, ctx) {
   aiMode = mode; aiCtx = { q, ...ctx };
   const voices = S.src.voices.map(v => v.id);
   let p, title;
-  if (mode === 'new')       { p = promptNewPost(voices); title = 'Generate a whole post'; }
-  else if (mode === 'responses') { p = promptResponses(q, voices, 3); title = 'Add comments'; }
+  if (mode === 'new')       { p = promptNewPost(voices, S.taste); title = 'Generate a whole post'; }
+  else if (mode === 'responses') { p = promptResponses(q, voices, 3, S.taste); title = 'Add comments'; }
   else {
     const obj = ctx.obj || q;
     const context = `Title: ${q.title.en}\nSetup: ${q.why.en}\nOptions: ${q.options.map(o => o.key + ' — ' + o.label.en).join(' · ')}`;
@@ -628,7 +659,8 @@ function mergeResponses(data, q) {
 function mergeNewPost(data) {
   const q = data?.question && data.question.title ? { ...data.question } : data;
   if (!q?.title?.en) return aiFail('That reply has no question title.');
-  if (!Array.isArray(q.options) || q.options.length !== 4) return aiFail('A post needs exactly four options.');
+  if (!Array.isArray(q.options) || q.options.length < MIN_OPTIONS || q.options.length > MAX_OPTIONS)
+    return aiFail(`A post needs ${MIN_OPTIONS} or ${MAX_OPTIONS} options; that reply has ${q.options?.length ?? 'none'}.`);
   const responses = keyList(q, 'responses') || keyList(data, 'responses') || [];
   const newVoices = keyList(q, 'newVoices', 'voices') || keyList(data, 'newVoices', 'voices') || [];
   const known = new Set([...S.src.voices.map(v => v.id), ...newVoices.map(v => v?.id)]);
@@ -647,7 +679,7 @@ function mergeNewPost(data) {
   const post = { id, date: q.date || new Date().toISOString().slice(0, 10), status: 'draft',
                  title: q.title, why: q.why || { en: '', zh: '' }, options: q.options,
                  works: q.works || [], responses };
-  S.src.questions.unshift(post); S.qid = id;
+  S.src.questions.unshift(post); S.qid = id; S.open.clear();
   aiDone(`created "${q.title.en.slice(0, 40)}" with ${responses.length} comment${responses.length === 1 ? '' : 's'}`);
 }
 
@@ -655,10 +687,10 @@ function aiDone(what, showVoice) {
   markDirty();
   $('#sheetAI').classList.add('hide');
   aiNote('');
-  renderList(); renderPost();
   // A merged comment sorts by reach, so a new voice with no weight lands at
-  // the bottom of a long thread. Go to it, or the merge looks like nothing.
-  if (showVoice) reveal(showVoice);
+  // the bottom of a long thread. Open it, or the merge looks like nothing.
+  if (showVoice) S.open.add(showVoice);
+  renderList(); renderPost();
   const problems = check();
   setStatus(problems.length ? `${what} — ${problems.length} problem(s), press Check` : what);
 }
@@ -670,18 +702,19 @@ function addVoices(list) {
                         reach: v.reach || null, works: v.works || [] });
   }
 }
+
 /* ── Wiring ─────────────────────────────────────────────────────────────── */
 const deviceSel = $('#device');
 for (const d of DEVICES) {
   const o = el('option', '', `${d.name} · ${d.w}×${d.h}`);
-  o.value = d.id; if (d.id === S.device) o.selected = true; deviceSel.appendChild(o);
+  o.value = d.id; if (d.id === device().id) o.selected = true; deviceSel.appendChild(o);
 }
 deviceSel.onchange = () => {
-  S.device = deviceSel.value; localStorage.setItem('pl.device', S.device); fitPhone();
+  S.device = deviceSel.value; localStorage.setItem('pl.device', S.device); fitDevice();
 };
 
 $('#filter').onchange = renderList;
-$('#btnLoad').onclick = ghLoad;
+$('#btnLoad').onclick = () => S.gh ? ghLoad() : $('#sheetConnect').classList.remove('hide');
 $('#btnSave').onclick = ghSave;
 $('#btnNew').onclick = () => { if (!S.src) return setStatus('load something first', true); openAI('new', null); };
 $('#btnCheck').onclick = () => {
@@ -689,12 +722,16 @@ $('#btnCheck').onclick = () => {
   alert(p.length ? `${p.length} problem(s):\n\n${p.join('\n')}` : 'All checks pass.');
 };
 $('#btnDownload').onclick = () => {
-  const blob = new Blob([JSON.stringify(S.src, null, 1)], { type: 'application/json' });
+  if (!S.src) return setStatus('nothing loaded', true);
+  const blob = new Blob([serialise(S.src)], { type: 'application/json' });
   const a = el('a'); a.href = URL.createObjectURL(blob); a.download = 'source.json'; a.click();
+  if (!S.sha) markClean();
 };
 $('#btnConnect').onclick = () => {
+  // The token stays where it is: shown as set, never written back into the page.
   if (S.gh) { $('#inRepo').value = S.gh.repo; $('#inBranch').value = S.gh.branch;
-              $('#inPath').value = S.gh.path; $('#inToken').value = S.gh.token; }
+              $('#inPath').value = S.gh.path; $('#inToken').value = '';
+              $('#inToken').placeholder = 'token saved in this browser — paste a new one to replace it'; }
   $('#sheetConnect').classList.remove('hide');
 };
 $('#btnConnectCancel').onclick = () => $('#sheetConnect').classList.add('hide');
@@ -709,7 +746,7 @@ function normaliseRepo(raw) {
 }
 
 $('#btnConnectSave').onclick = async () => {
-  const typed = $('#inRepo').value, token = $('#inToken').value.trim();
+  const typed = $('#inRepo').value, token = $('#inToken').value.trim() || S.gh?.token || '';
   const repo = normaliseRepo(typed);
   if (!repo) {
     return showConnectError(typed.trim()
@@ -718,23 +755,34 @@ $('#btnConnectSave').onclick = async () => {
   }
   $('#inRepo').value = repo;
   if (!token) return showConnectError('Paste a token. Create one at github.com → Settings → Developer settings → Fine-grained tokens.');
+  const was = S.gh;
   S.gh = { repo, branch: $('#inBranch').value.trim() || 'main',
            path: $('#inPath').value.trim() || 'Content/source.json', token };
   showConnectError('connecting…');
   // Keep the sheet open unless it actually worked, so a failure is visible.
   if (await ghLoad()) {
     localStorage.setItem('pl.gh', JSON.stringify(S.gh));
+    $('#inToken').value = '';
     $('#sheetConnect').classList.add('hide');
-  }
+  } else if (was) S.gh = was;
 };
 $('#btnLocal').onclick = () => $('#fileIn').click();
 $('#fileIn').onchange = async (e) => {
   const f = e.target.files[0]; if (!f) return;
-  S.src = JSON.parse(await f.text()); S.sha = null;
-  $('#repoLine').textContent = `${f.name} (local — use Download to save)`;
-  $('#sheetConnect').classList.add('hide');
-  renderList(); selectFirst(); setStatus('opened from disk');
+  if (S.dirty && !confirm('Opening a file drops your unsaved changes. Open anyway?')) return;
+  try { openLocal(JSON.parse(await f.text()), `${f.name} (local — use Download to save)`); }
+  catch (err) { showConnectError(`${f.name} is not valid JSON: ${err.message}`); }
+  e.target.value = '';
 };
+/// A source.json from disk or from this site (?src=): no GitHub, Download saves.
+function openLocal(src, line) {
+  if (!Array.isArray(src?.questions) || !Array.isArray(src?.voices))
+    return showConnectError('That is not a source.json — it has no questions or voices.');
+  S.src = src; S.sha = null; markClean();
+  $('#repoLine').textContent = line;
+  $('#sheetConnect').classList.add('hide');
+  opened(); setStatus('opened — Save is off; use Download');
+}
 $('#btnCopy').onclick = async () => {
   await navigator.clipboard.writeText($('#aiPrompt').textContent);
   $('#btnCopy').textContent = 'Copied'; setTimeout(() => $('#btnCopy').textContent = 'Copy prompt', 1200);
@@ -743,4 +791,21 @@ $('#btnMerge').onclick = mergeReply;
 $('#btnAICancel').onclick = () => $('#sheetAI').classList.add('hide');
 window.addEventListener('beforeunload', (e) => { if (S.dirty) { e.preventDefault(); e.returnValue = ''; } });
 
-if (S.gh) ghLoad(); else $('#sheetConnect').classList.remove('hide');
+/// ?src=<path> opens a source.json served beside the editor — on this
+/// computer, Editor/?src=../Content/source.json with the repo root served.
+/// Same origin only: the editor never fetches content from anywhere else.
+async function boot() {
+  const want = new URLSearchParams(location.search).get('src');
+  if (want) {
+    const url = new URL(want, location.href);
+    if (url.origin !== location.origin) return setStatus('?src must be on this site', true);
+    try {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) throw new Error(`${r.status}`);
+      return openLocal(await r.json(), `${url.pathname} (local — use Download to save)`);
+    } catch (e) { setStatus(`could not open ${want}: ${e.message}`, true); }
+  }
+  if (S.gh) ghLoad(); else $('#sheetConnect').classList.remove('hide');
+}
+renderPost();
+boot();

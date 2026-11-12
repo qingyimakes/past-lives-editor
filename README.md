@@ -7,7 +7,7 @@ API, so hosting is free and every edit is a commit you can revert.
 ## Where it lives
 
 - **Editor (public):** https://qingyimakes.github.io/past-lives-editor/
-  Served from `qingyimakes/past-lives-editor`, which holds only these five
+  Served from `qingyimakes/past-lives-editor`, which holds only these six
   files. No content, so nothing to leak.
 - **Content and app (private):** `qingyimakes/philosophy-app`. Drafts, hidden posts
   and the archive stay private because this repo is private.
@@ -30,15 +30,54 @@ api.github.com. Use a short expiry, and don't do this on a shared machine.
 To work offline instead, press **Open a file instead**, pick `source.json`, and
 use **Download source.json** when you're done.
 
+## The preview is the web page
+
+The middle of the editor is not a drawing of the app. It is the published web
+page, `Web/index.html`, opened as `?preview` in a frame. The editor converts the
+post you have selected — draft, hidden or archived included — with `build.js`,
+a line-for-line port of `Content/build.py`, and posts it to the page, which
+draws it with its own code. So the post looks exactly as readers will see it.
+
+- It opens on the post's **Thread**; **Feed** shows its card, first in the feed.
+- Every keystroke in the right-hand panel redraws the preview in place.
+  Opening a comment there scrolls the preview to it.
+- **Preview on** sets the frame's size: three phones, a tablet, a laptop and a
+  desktop — the page's own breakpoints.
+- Votes and likes made in the preview are not kept anywhere.
+- On GitHub Pages the frame loads `https://qingyimakes.github.io/still/?preview`,
+  so the web page must be published with the `?preview` mode before the
+  editor's preview works there. Until it is, the editor says the page did not
+  answer.
+- `node Tools/check-editor-build.mjs` fails if `build.js` and `build.py` ever
+  build the published questions differently.
+
+## On this computer
+
+Serve the **repo root**, not `Editor/` — the preview needs `Web/` beside it:
+
+```bash
+python3 -m http.server 4181 --bind 127.0.0.1
+```
+
+(the `still-editor` entry in `.claude/launch.json` does this). Then open
+<http://localhost:4181/Editor/?src=../Content/source.json> to work on the
+repo's file without GitHub, or **Connect** as usual. `?src=` takes a path on
+the same server only. A copy named `Editor/source-*.json` is git-ignored, for
+trying things out. With a local file Save is off: **Download** writes
+`source.json`.
+
 ## The workflow
 
-- **New post** builds a prompt for a whole post — question, four options and
+- **New post** builds a prompt for a whole post — question, three options and
   6–8 sourced comments. Nothing is generated here; you run the prompt in the
   Claude you already pay for and paste the reply back. A Claude subscription
   does not include API access, so calling an API would bill per token.
-- Everything on the phone is editable in place. Hover a block for
-  *rewrite / shorter / longer* — each builds a prompt for that field alone.
-- Click a **Voted for** pill to move a voice to a different option. There is no
+- Everything is edited in the right-hand panel, in the language chosen on the
+  left. *rewrite / shorter / longer* beside a field builds a prompt for that
+  field alone.
+- A post has three options (A–C) or, for older posts, four; **+ option** and
+  **Remove** change that, and only for an option no voice holds.
+- **Voted for** moves a voice to a different option (or click its letter). There is no
   "against": disagreement is voices sitting under different answers.
 - **Status** is draft → published → hidden → archived. Only `published`
   questions are built into the app and the web.
